@@ -39,14 +39,11 @@ services:
       - isp_network
     restart: unless-stopped
 
-     mikrotik:
+  mikrotik:    # ✅ صحيح: مسافتان فقط
     image: alpine:latest
     container_name: isp_mikrotik
     command: sleep infinity
-    network_mode: "host"  # 🔥 يستخدم شبكة الـ Host للوصول إلى MikroTik الحقيقي
-    # أو استخدم macvlan للوصول المباشر
-    # networks:
-    #   - isp_network
+    network_mode: "host"
     restart: unless-stopped
 
   backend:
