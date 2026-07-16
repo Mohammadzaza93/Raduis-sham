@@ -1,0 +1,93 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: isp_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: RootP@ssw0rd2026!
+      MYSQL_DATABASE: isp_system
+      MYSQL_USER: isp_user
+      MYSQL_PASSWORD: SecureP@ssw0rd2026!
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - isp_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: isp_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - isp_network
+
+  radius:
+    image: freeradius/freeradius-server:latest
+    container_name: isp_radius
+    ports:
+      - "1812:1812/udp"
+      - "1813:1813/udp"
+    networks:
+      - isp_network
+    restart: unless-stopped
+
+     mikrotik:
+    image: alpine:latest
+    container_name: isp_mikrotik
+    command: sleep infinity
+    network_mode: "host"  # 🔥 يستخدم شبكة الـ Host للوصول إلى MikroTik الحقيقي
+    # أو استخدم macvlan للوصول المباشر
+    # networks:
+    #   - isp_network
+    restart: unless-stopped
+
+  backend:
+    build: .
+    container_name: isp_backend
+    ports:
+      - "5000:5000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      radius:
+        condition: service_started
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5000
+      - ConnectionStrings__DefaultConnection=Server=mysql;Database=isp_system;User=root;Password=RootP@ssw0rd2026!
+      - Redis__ConnectionString=redis:6379
+      - RadiusServer__Host=isp_radius
+      - RadiusServer__Port=1812
+      - RadiusServer__Secret=testing123
+    volumes:
+      - ./backend:/app
+    networks:
+      - isp_network
+
+  frontend:
+    build: ./frontend
+    container_name: isp_frontend
+    ports:
+      - "8080:8080"
+    depends_on:
+      - backend
+    networks:
+      - isp_network
+
+networks:
+  isp_network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:
