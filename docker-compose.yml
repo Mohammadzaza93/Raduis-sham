@@ -18,6 +18,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
@@ -28,6 +29,7 @@ services:
       - redis_data:/data
     networks:
       - isp_network
+    restart: unless-stopped
 
   radius:
     image: freeradius/freeradius-server:latest
@@ -39,7 +41,7 @@ services:
       - isp_network
     restart: unless-stopped
 
-  mikrotik:    # ✅ صحيح: مسافتان فقط
+  mikrotik:
     image: alpine:latest
     container_name: isp_mikrotik
     command: sleep infinity
@@ -47,7 +49,9 @@ services:
     restart: unless-stopped
 
   backend:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: isp_backend
     ports:
       - "5000:5000"
@@ -66,13 +70,14 @@ services:
       - RadiusServer__Host=isp_radius
       - RadiusServer__Port=1812
       - RadiusServer__Secret=testing123
-    volumes:
-      - ./backend:/app
     networks:
       - isp_network
+    restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: isp_frontend
     ports:
       - "8080:8080"
@@ -80,6 +85,7 @@ services:
       - backend
     networks:
       - isp_network
+    restart: unless-stopped
 
 networks:
   isp_network:

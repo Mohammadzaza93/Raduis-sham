@@ -1,18 +1,36 @@
-﻿FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+﻿# ============================================================================
+# Dockerfile - ISPSystem API (Multi-stage)
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# Stage 1: Build & Publish
+# ---------------------------------------------------------------------------
+FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS build
 WORKDIR /src
 
-# نسخ ملفات المشروع أولاً وعمل الـ Restore
-COPY ["ISPSystem.csproj", "./"]
-RUN dotnet restore "ISPSystem.csproj"
+# نسخ ملف المشروع واستعادة الحزم
+COPY ISPSystem.csproj .
+RUN dotnet restore "ISPSystem.csproj" --disable-parallel --no-cache
 
-# 🛠️ التأكيد على نسخ كل المجلدات الفرعية (بما فيها مجلد backend)
+# نسخ جميع الملفات وبناء المشروع
 COPY . .
-
-# عمل الـ Publish للمشروع الرئيسي
 RUN dotnet publish "ISPSystem.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
-# مرحلة التشغيل (Runtime)
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
+# ---------------------------------------------------------------------------
+# Stage 2: Runtime
+# ---------------------------------------------------------------------------
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
+
+# متغيرات البيئة
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=true
+ENV ASPNETCORE_HTTP_PORTS="5000"
+ENV ASPNETCORE_ENVIRONMENT=Development
+
+EXPOSE 5000
+
+# نسخ الملفات المبنية
 COPY --from=build /app/publish .
+
+# نقطة الدخول
 ENTRYPOINT ["dotnet", "ISPSystem.dll"]
