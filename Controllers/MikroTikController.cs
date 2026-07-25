@@ -7,7 +7,7 @@ using System;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 
-namespace ISPSystem.backend.Controllers
+namespace ISPSystem.Controllers
 {
     [ApiController]
     [Route("api/mikrotik")]

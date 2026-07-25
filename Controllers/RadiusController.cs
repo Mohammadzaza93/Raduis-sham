@@ -1,9 +1,9 @@
-// backend/Controllers/RadiusController.cs
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Options;
 using ISPSystem.Services;
 using ISPSystem.Models;
 using ISPSystem.DTOs;
-using Microsoft.AspNetCore.Authorization;
 
 namespace ISPSystem.Controllers
 {
@@ -13,15 +13,19 @@ namespace ISPSystem.Controllers
     public class RadiusController : ControllerBase
     {
         private readonly RadiusClientService _radiusClient;
+        private readonly RadiusServerConfig _config;
         private readonly ILogger<RadiusController> _logger;
 
-        public RadiusController(RadiusClientService radiusClient, ILogger<RadiusController> logger)
+        public RadiusController(
+            RadiusClientService radiusClient,
+            IOptions<RadiusServerConfig> config,
+            ILogger<RadiusController> logger)
         {
             _radiusClient = radiusClient;
+            _config = config.Value;
             _logger = logger;
         }
 
-        // POST: api/radius/authenticate
         [HttpPost("authenticate")]
         [AllowAnonymous]
         public async Task<IActionResult> Authenticate([FromBody] RadiusAuthenticateDto dto)
@@ -50,25 +54,23 @@ namespace ISPSystem.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError($"RADIUS authentication error: {ex.Message}");
+                _logger.LogError(ex, "RADIUS authentication error");
                 return StatusCode(500, new { message = "RADIUS server error", error = ex.Message });
             }
         }
 
-        // POST: api/radius/test
         [HttpPost("test")]
         public async Task<IActionResult> TestConnection()
         {
             try
             {
-                // «Œ »«— «·« ’«· »«” Œœ«„ „” Œœ„  Ã—Ì»Ì
                 var response = await _radiusClient.AuthenticateAsync("test", "test123");
                 return Ok(new
                 {
                     connected = true,
-                    server = "192.168.1.121",
-                    port = 1812,
-                    response = response
+                    server = _config.Host,
+                    port = _config.Port,
+                    response
                 });
             }
             catch (Exception ex)
@@ -77,8 +79,8 @@ namespace ISPSystem.Controllers
                 {
                     connected = false,
                     error = ex.Message,
-                    server = "192.168.1.121",
-                    port = 1812
+                    server = _config.Host,
+                    port = _config.Port
                 });
             }
         }

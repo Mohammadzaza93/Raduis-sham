@@ -1,14 +1,15 @@
-// backend/Services/RadiusClientService.cs
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ISPSystem.Models;
-using System.Security.Cryptography;
-using System.Linq;
 
 namespace ISPSystem.Services
 {
@@ -23,32 +24,34 @@ namespace ISPSystem.Services
             _logger = logger;
         }
 
-        // „’«œﬁ… «·„” Œœ„ ⁄»— RADIUS
-        public async Task<RadiusResponse> AuthenticateAsync(string username, string password, string? nasIp = null, string? macAddress = null)
+        public async Task<RadiusResponse> AuthenticateAsync(
+            string username,
+            string password,
+            string nasIp = null,
+            string macAddress = null)
         {
             try
             {
                 var request = CreateAuthRequest(username, password, nasIp, macAddress);
-                var response = await SendRadiusRequestAsync(request, _config.Port);
+                var response = await SendRadiusRequestAsync(request);
 
-                //  ÕÊÌ· «·”„«  „‰ Dictionary<byte, string> ≈·Ï Dictionary<string, string>
                 var attributes = new Dictionary<string, string>();
                 foreach (var attr in response.Attributes)
-                {
                     attributes[attr.Key.ToString()] = attr.Value;
-                }
 
                 return new RadiusResponse
                 {
                     Success = response.Code == RadiusCode.AccessAccept,
                     Code = response.Code.ToString(),
-                    Message = response.Code == RadiusCode.AccessAccept ? "Authentication successful" : "Authentication failed",
+                    Message = response.Code == RadiusCode.AccessAccept
+                        ? "Authentication successful"
+                        : "Authentication failed",
                     Attributes = attributes
                 };
             }
             catch (Exception ex)
             {
-                _logger.LogError($"RADIUS authentication error: {ex.Message}");
+                _logger.LogError(ex, "RADIUS authentication error");
                 return new RadiusResponse
                 {
                     Success = false,
@@ -59,82 +62,86 @@ namespace ISPSystem.Services
             }
         }
 
-        // ≈‰‘«¡ ÿ·» „’«œﬁ…
-        private RadiusPacket CreateAuthRequest(string username, string password, string? nasIp = null, string? macAddress = null)
+        private RadiusPacket CreateAuthRequest(string username, string password, string? nasIp, string? macAddress)
         {
+            var authenticator = new byte[16];
+            RandomNumberGenerator.Fill(authenticator);
+
             var packet = new RadiusPacket
             {
                 Code = RadiusCode.AccessRequest,
-                Identifier = (byte)new Random().Next(0, 255),
-                Authenticator = CreateAuthenticator(),
+                Identifier = (byte)Random.Shared.Next(0, 256),
+                Authenticator = authenticator,
                 Attributes = new Dictionary<byte, string>()
             };
 
-            // ≈÷«›… «·”„«  «·√”«”Ì…
             packet.Attributes[1] = username; // User-Name
-            packet.Attributes[2] = password; // User-Password (”Ì „  ‘›Ì—Â)
-            packet.Attributes[4] = "0"; // NAS-IP-Address
-            packet.Attributes[5] = "0"; // NAS-Port
-            packet.Attributes[6] = "1"; // Service-Type (Login)
-            packet.Attributes[7] = "1"; // Framed-Protocol (PPP)
-            packet.Attributes[8] = "255.255.255.255"; // Framed-IP-Address
-            packet.Attributes[32] = "0"; // NAS-Identifier
+
+            // User-Password ÌÃ»  ‘›Ì—Â »ÿ—Ìﬁ… PAP
+            packet.Attributes[2] = EncryptPapPassword(password, authenticator, _config.Secret);
 
             if (!string.IsNullOrEmpty(nasIp))
-            {
-                packet.Attributes[4] = nasIp;
-            }
+                packet.Attributes[4] = nasIp; // NAS-IP-Address
 
             if (!string.IsNullOrEmpty(macAddress))
-            {
-                packet.Attributes[30] = macAddress; // Calling-Station-Id
-            }
+                packet.Attributes[31] = macAddress; // Calling-Station-Id
+
+            packet.Attributes[6] = "1"; // Service-Type = Login
+            packet.Attributes[7] = "1"; // Framed-Protocol = PPP
 
             return packet;
         }
 
-        // ≈—”«· ÿ·» RADIUS ⁄»— UDP
-        private async Task<RadiusPacket> SendRadiusRequestAsync(RadiusPacket request, int port)
+        private static string EncryptPapPassword(string password, byte[] authenticator, string secret)
+        {
+            var secretBytes = Encoding.ASCII.GetBytes(secret);
+            var passwordBytes = Encoding.ASCII.GetBytes(password);
+
+            // ÌÃ» √‰ ÌﬂÊ‰ ÿÊ· ﬂ·„… «·„—Ê— „÷«⁄›« ·‹ 16
+            var paddedLength = ((passwordBytes.Length + 15) / 16) * 16;
+            var padded = new byte[paddedLength];
+            Array.Copy(passwordBytes, padded, passwordBytes.Length);
+
+            var result = new byte[paddedLength];
+            var previous = authenticator;
+
+            using var md5 = MD5.Create();
+
+            for (int i = 0; i < paddedLength; i += 16)
+            {
+                var hashInput = secretBytes.Concat(previous).ToArray();
+                var hash = md5.ComputeHash(hashInput);
+
+                for (int j = 0; j < 16; j++)
+                    result[i + j] = (byte)(padded[i + j] ^ hash[j]);
+
+                previous = result.Skip(i).Take(16).ToArray();
+            }
+
+            // ‰—Ã⁄Â« ﬂ‹ Base64 „ƒﬁ « (”Ì „  ÕÊÌ·Â« ·»«Ì «  ›Ì ToBytes)
+            return Convert.ToBase64String(result);
+        }
+
+        private async Task<RadiusPacket> SendRadiusRequestAsync(RadiusPacket request)
         {
             using var client = new UdpClient();
-            client.Connect(_config.Host, port);
+            client.Connect(_config.Host, _config.Port);
             client.Client.ReceiveTimeout = _config.Timeout * 1000;
 
-            //  ÕÊÌ· «·ÿ·» ≈·Ï »«Ì 
             var requestBytes = request.ToBytes(_config.Secret);
             await client.SendAsync(requestBytes, requestBytes.Length);
 
-            // «” ﬁ»«· «·—œ
             var receiveTask = client.ReceiveAsync();
             var timeoutTask = Task.Delay(_config.Timeout * 1000);
 
-            var completedTask = await Task.WhenAny(receiveTask, timeoutTask);
-
-            if (completedTask == timeoutTask)
-            {
+            if (await Task.WhenAny(receiveTask, timeoutTask) == timeoutTask)
                 throw new TimeoutException("RADIUS server did not respond");
-            }
 
             var result = await receiveTask;
-            var responseBytes = result.Buffer;
-
-            //  Õ·Ì· «·—œ
-            var response = RadiusPacket.FromBytes(responseBytes, _config.Secret);
-
-            return response;
-        }
-
-        // ≈‰‘«¡ „’«œﬁ ⁄‘Ê«∆Ì
-        private byte[] CreateAuthenticator()
-        {
-            var authenticator = new byte[16];
-            using var rng = RandomNumberGenerator.Create();
-            rng.GetBytes(authenticator);
-            return authenticator;
+            return RadiusPacket.FromBytes(result.Buffer);
         }
     }
 
-    // ›∆«  „”«⁄œ…
     public enum RadiusCode : byte
     {
         AccessRequest = 1,
@@ -142,10 +149,7 @@ namespace ISPSystem.Services
         AccessReject = 3,
         AccountingRequest = 4,
         AccountingResponse = 5,
-        AccessChallenge = 11,
-        DisconnectRequest = 40,
-        DisconnectACK = 41,
-        DisconnectNAK = 42
+        AccessChallenge = 11
     }
 
     public class RadiusPacket
@@ -153,39 +157,43 @@ namespace ISPSystem.Services
         public RadiusCode Code { get; set; }
         public byte Identifier { get; set; }
         public byte[] Authenticator { get; set; } = new byte[16];
-        public Dictionary<byte, string> Attributes { get; set; } = new Dictionary<byte, string>();
+        public Dictionary<byte, string> Attributes { get; set; } = new ();
 
         public byte[] ToBytes(string secret)
         {
             using var ms = new MemoryStream();
             using var writer = new BinaryWriter(ms);
 
-            // Code, Identifier, Length (placeholder)
             writer.Write((byte)Code);
             writer.Write(Identifier);
-            writer.Write((short)0); // Length - will be updated later
-
-            // Authenticator (16 bytes)
+            writer.Write((ushort)0); // placeholder for length
             writer.Write(Authenticator);
 
-            // Attributes
             foreach (var attr in Attributes)
             {
-                var valueBytes = Encoding.ASCII.GetBytes(attr.Value);
+                byte[] valueBytes;
+
+                if (attr.Key == 2) // User-Password („‘›— „”»ﬁ«)
+                    valueBytes = Convert.FromBase64String(attr.Value);
+                else
+                    valueBytes = Encoding.ASCII.GetBytes(attr.Value);
+
                 writer.Write(attr.Key);
                 writer.Write((byte)(valueBytes.Length + 2));
                 writer.Write(valueBytes);
             }
 
-            // Update length
             var bytes = ms.ToArray();
-            var length = (short)bytes.Length;
-            BitConverter.GetBytes(length).CopyTo(bytes, 2);
+
+            // Length ÌÃ» √‰ ÌﬂÊ‰ Big-Endian (Network order)
+            var length = (ushort)bytes.Length;
+            bytes[2] = (byte)(length >> 8);
+            bytes[3] = (byte)(length & 0xFF);
 
             return bytes;
         }
 
-        public static RadiusPacket FromBytes(byte[] bytes, string secret)
+        public static RadiusPacket FromBytes(byte[] bytes)
         {
             var packet = new RadiusPacket();
             using var ms = new MemoryStream(bytes);
@@ -193,10 +201,14 @@ namespace ISPSystem.Services
 
             packet.Code = (RadiusCode)reader.ReadByte();
             packet.Identifier = reader.ReadByte();
-            var length = reader.ReadUInt16();
+
+            // Length is big-endian
+            var lengthHigh = reader.ReadByte();
+            var lengthLow = reader.ReadByte();
+            var length = (lengthHigh << 8) | lengthLow;
+
             packet.Authenticator = reader.ReadBytes(16);
 
-            // ﬁ—«¡… «·”„« 
             while (ms.Position < length)
             {
                 var type = reader.ReadByte();
@@ -214,6 +226,6 @@ namespace ISPSystem.Services
         public bool Success { get; set; }
         public string Code { get; set; } = string.Empty;
         public string Message { get; set; } = string.Empty;
-        public Dictionary<string, string> Attributes { get; set; } = new Dictionary<string, string>();
+        public Dictionary<string, string> Attributes { get; set; } = new ();
     }
 }

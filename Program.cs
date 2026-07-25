@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ISPSystem.Data;
 using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
 
 namespace ISPSystem
 {
@@ -20,7 +21,7 @@ namespace ISPSystem
                 {
                     var context = services.GetRequiredService<AppDbContext>();
                     // Â–« «·”ÿ— ÌﬁÊ„ »≈‰‘«¡ «·Ãœ«Ê· »‰«¡ ⁄·Ï «·‹ Models «·Œ«’… »ﬂ
-                    context.Database.EnsureCreated();
+                    context.Database.Migrate();
                 }
                 catch (Exception ex)
                 {

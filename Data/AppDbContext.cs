@@ -22,7 +22,7 @@ namespace ISPSystem.Data
         public DbSet<Sale> Sales { get; set; }
         public DbSet<AuditLog> AuditLogs { get; set; }
         public DbSet<SystemSetting> SystemSettings { get; set; }
-        public DbSet<Device> Device { get; set; }
+        public DbSet<Device> Devices { get; set; }
         public DbSet<MikroTikDevice> MikroTikDevices { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
