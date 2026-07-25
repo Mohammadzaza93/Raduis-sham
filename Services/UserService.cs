@@ -180,9 +180,9 @@ namespace ISPSystem.Services
         }
 
         // ========== 🔥 الطريقة الرئيسية: إنشاء عميل مع إضافته إلى MikroTik و Radius ==========
+        // ========== 🔥 إنشاء عميل مع RADIUS كمسؤول رئيسي ==========
         public async Task<Client> CreateClient(CreateClientDto dto)
         {
-            // التحقق من البيانات
             if (string.IsNullOrEmpty(dto.NationalId))
                 throw new Exception("الرقم الوطني مطلوب");
 
@@ -195,12 +195,10 @@ namespace ISPSystem.Services
             if (dto.PlanId <= 0)
                 throw new Exception("يجب اختيار باقة صحيحة");
 
-            // التحقق من وجود الخطة
             var plan = await _context.Plans.FindAsync(dto.PlanId);
             if (plan == null)
                 throw new Exception("الخطة غير موجودة");
 
-            // حساب رقم التسلسل للرقم الوطني
             var existingCount = await _context.Clients
                 .Where(c => c.NationalId == dto.NationalId)
                 .CountAsync();
@@ -210,7 +208,8 @@ namespace ISPSystem.Services
             var plainPassword = RandomPasswordService.GeneratePassword(5);
             var hashedPassword = _password.Hash(plainPassword);
 
-            // إنشاء العميل
+            var endDate = DateTime.Now.AddDays(plan.DurationDays);
+
             var client = new Client
             {
                 Username = username,
@@ -240,7 +239,7 @@ namespace ISPSystem.Services
                     ClientId = client.Id,
                     PlanId = plan.Id,
                     StartDate = DateTime.Now,
-                    EndDate = DateTime.Now.AddDays(plan.DurationDays),
+                    EndDate = endDate,
                     IsActive = true,
                     Status = "Active",
                     PaidAmount = plan.Price
@@ -275,7 +274,7 @@ namespace ISPSystem.Services
                     InvoiceId = invoice.Id,
                     Amount = plan.Price,
                     Date = DateTime.Now,
-                    PaymentMethod = dto.PaymentMethod,
+                    PaymentMethod = dto.PaymentMethod ?? "Cash",
                     Status = "Completed"
                 };
                 _context.Payments.Add(payment);
@@ -284,64 +283,56 @@ namespace ISPSystem.Services
                 await transaction.CommitAsync();
                 await _audit.Log("Create", "Client", client.Id);
 
-                // ========== 🟢 5. إضافة المستخدم إلى MikroTik ==========
+                // ========== 🟢 RADIUS (المسؤول الرئيسي) ==========
                 try
                 {
-                    // تحويل السرعة إلى تنسيق مناسب لـ MikroTik
-                    string mikrotikSpeed = plan.Speed.Replace("Mb/s", "M").Trim();
-                    if (!mikrotikSpeed.Contains("/"))
-                    {
-                        mikrotikSpeed = $"{mikrotikSpeed}/{mikrotikSpeed}";
-                    }
+                    string radiusSpeed = plan.Speed?
+                        .Replace("Mb/s", "M")
+                        .Replace("Mbps", "M")
+                        .Trim() ?? "1M/1M";
 
+                    if (!radiusSpeed.Contains("/"))
+                        radiusSpeed = $"{radiusSpeed}/{radiusSpeed}";
+
+                    // إنشاء المستخدم في RADIUS مع تاريخ الانتهاء
+                    bool radiusResult = await _radius.CreateUser(
+                        client.Username,
+                        plainPassword,
+                        radiusSpeed,
+                        endDate   // ← تاريخ انتهاء الاشتراك
+                    );
+
+                    if (radiusResult)
+                        Console.WriteLine($"✅ RADIUS: تم إنشاء {client.Username} بنجاح (ينتهي: {endDate:yyyy-MM-dd})");
+                    else
+                        Console.WriteLine($"⚠️ RADIUS: فشل إنشاء {client.Username}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"❌ خطأ RADIUS: {ex.Message}");
+                }
+
+                // ========== 🟡 MikroTik (اختياري - Dual Write) ==========
+                try
+                {
                     bool mikrotikResult = await _mikroTik.AddPppUser(
                         client.Username,
                         plainPassword,
-                        plan.Speed, // استخدام اسم الباقة كـ Profile
+                        plan.Speed,
                         client.FullName
                     );
 
                     if (mikrotikResult)
-                    {
-                        Console.WriteLine($"✅ تم إضافة المستخدم {client.Username} إلى MikroTik بنجاح");
-                    }
+                        Console.WriteLine($"✅ MikroTik: تم إضافة {client.Username}");
                     else
-                    {
-                        Console.WriteLine($"⚠️ فشل إضافة المستخدم {client.Username} إلى MikroTik");
-                    }
+                        Console.WriteLine($"⚠️ MikroTik: فشل إضافة {client.Username}");
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"❌ خطأ في MikroTik: {ex.Message}");
+                    Console.WriteLine($"❌ خطأ MikroTik: {ex.Message}");
                 }
 
-                // ========== 🟢 6. إضافة المستخدم إلى Radius ==========
-                try
-                {
-                    // تحويل السرعة لتنسيق Radius (مثل: 4M/4M)
-                    string radiusSpeed = plan.Speed.Replace("Mb/s", "M").Trim();
-                    if (!radiusSpeed.Contains("/"))
-                    {
-                        radiusSpeed = $"{radiusSpeed}/{radiusSpeed}";
-                    }
-
-                    bool radiusResult = await _radius.CreateUser(client.Username, plainPassword, radiusSpeed);
-
-                    if (radiusResult)
-                    {
-                        Console.WriteLine($"✅ تم إضافة المستخدم {client.Username} إلى Radius بنجاح");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"⚠️ فشل إضافة المستخدم {client.Username} إلى Radius");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"❌ خطأ في Radius: {ex.Message}");
-                }
-
-                // إرجاع كلمة المرور العادية للعميل
+                // إرجاع كلمة المرور العادية (مرة واحدة)
                 client.Password = plainPassword;
                 return client;
             }

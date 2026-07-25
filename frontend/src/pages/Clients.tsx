@@ -1,572 +1,553 @@
-﻿import { useState, useEffect } from 'react';
+﻿// frontend/src/pages/Clients.tsx
+import { useState, useEffect } from 'react';
 import {
-  Box,
-  Typography,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TablePagination,
-  TextField,
-  Button,
-  Chip,
-  IconButton,
-  InputAdornment,
-  Menu,
-  MenuItem,
-  ListItemIcon,
-  ListItemText,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  FormControl,
-  InputLabel,
-  Select,
-  Grid,
-  Alert,
-  CircularProgress,
+    Box,
+    Typography,
+    Paper,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    TablePagination,
+    TextField,
+    Button,
+    Chip,
+    IconButton,
+    InputAdornment,
+    Menu,
+    MenuItem,
+    ListItemIcon,
+    ListItemText,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    FormControl,
+    InputLabel,
+    Select,
+    Alert,
+    CircularProgress,
+    Divider,
 } from '@mui/material';
 import {
-  Add as AddIcon,
-  Search as SearchIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  Refresh as RefreshIcon,
-  MoreVert as MoreVertIcon,
-  PlayArrow as ActivateIcon,
-  Save as SaveIcon,
-  Close as CloseIcon,
+    Add as AddIcon,
+    Search as SearchIcon,
+    Edit as EditIcon,
+    Delete as DeleteIcon,
+    Refresh as RefreshIcon,
+    MoreVert as MoreVertIcon,
+    PlayArrow as ActivateIcon,
+    Pause as SuspendIcon,
+    DeleteForever as DeleteForeverIcon,
+    Save as SaveIcon,
+    Close as CloseIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 
 interface Plan {
-  id: number;
-  name: string;
-  speed: string;
-  price: number;
-  durationDays: number;
+    id: number;
+    name: string;
+    speed: string;
+    price: number;
+    durationDays: number;
 }
 
 interface Subscription {
-  id: number;
-  planId: number;
-  planName: string;
-  endDate: string;
-  isActive: boolean;
+    id: number;
+    planId?: number;
+    planName: string;
+    endDate: string;
+    isActive: boolean;
+    daysRemaining?: number;
 }
 
 interface Client {
-  id: number;
-  username: string;
-  fullName: string;
-  phone: string;
-  email: string;
-  status: string;
-  nationalId: string;
-  macAddress: string;
-  ipAddress: string;
-  address: string;
-  activeSubscription?: Subscription;
+    id: number;
+    username: string;
+    fullName: string;
+    phone: string;
+    email: string;
+    status: string;
+    nationalId: string;
+    macAddress: string;
+    ipAddress: string;
+    address?: string;
+    activeSubscription?: Subscription;
 }
 
 export default function Clients() {
-  const [clients, setClients] = useState<Client[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  
-  // حالة نوافذ الحوار
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [activateDialogOpen, setActivateDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  
-  // حالة النماذج
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [selectedPlanId, setSelectedPlanId] = useState<number>(0);
-  const [editFormData, setEditFormData] = useState({
-    fullName: '',
-    phone: '',
-    email: '',
-    address: '',
-  });
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+    const [clients, setClients] = useState<Client[]>([]);
+    const [total, setTotal] = useState(0);
+    const [page, setPage] = useState(0);
+    const [rowsPerPage, setRowsPerPage] = useState(10);
+    const [search, setSearch] = useState('');
+    const [loading, setLoading] = useState(true);
+    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+    const [selectedClient, setSelectedClient] = useState<Client | null>(null);
 
-  const navigate = useNavigate();
+    // Dialogs
+    const [editDialogOpen, setEditDialogOpen] = useState(false);
+    const [activateDialogOpen, setActivateDialogOpen] = useState(false);
+    const [suspendDialogOpen, setSuspendDialogOpen] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [permanentDeleteDialogOpen, setPermanentDeleteDialogOpen] = useState(false);
 
-  useEffect(() => {
-    fetchClients();
-    fetchPlans();
-  }, [page, rowsPerPage, search]);
+    const [plans, setPlans] = useState<Plan[]>([]);
+    const [selectedPlanId, setSelectedPlanId] = useState<number>(0);
+    const [editFormData, setEditFormData] = useState({
+        fullName: '',
+        phone: '',
+        email: '',
+        address: '',
+    });
+    const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
+    const [submitting, setSubmitting] = useState(false);
 
-  const fetchClients = async () => {
-    setLoading(true);
-    try {
-      const response = await api.get('/clients', {
-        params: {
-          page: page + 1,
-          pageSize: rowsPerPage,
-          search,
-        },
-      });
-      if (response.data.success) {
-        setClients(response.data.data.data);
-        setTotal(response.data.data.total);
-      }
-    } catch (error) {
-      console.error('Error fetching clients:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        fetchClients();
+        fetchPlans();
+    }, [page, rowsPerPage, search]);
+
+    const fetchClients = async () => {
+        setLoading(true);
+        try {
+            const response = await api.get('/clients', {
+                params: { page: page + 1, pageSize: rowsPerPage, search },
+            });
+            if (response.data.success) {
+                setClients(response.data.data.data);
+                setTotal(response.data.data.total);
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const fetchPlans = async () => {
         try {
             const response = await api.get('/plans');
-
-            console.log('Plans Response:', response.data);
-
-            if (
-                response.data &&
-                response.data.success &&
-                Array.isArray(response.data.data)
-            ) {
+            if (response.data?.success && Array.isArray(response.data.data)) {
                 setPlans(response.data.data);
-            } else {
-                setPlans([]);
             }
-        } catch (error) {
-            console.error(error);
+        } catch {
             setPlans([]);
         }
     };
 
-  // فتح القائمة المنسدلة
-  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, client: Client) => {
-    setAnchorEl(event.currentTarget);
-    setSelectedClient(client);
-  };
+    const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, client: Client) => {
+        setAnchorEl(event.currentTarget);
+        setSelectedClient(client);
+    };
 
-  const handleMenuClose = () => {
-    setAnchorEl(null);
-  };
+    const handleMenuClose = () => setAnchorEl(null);
 
-  // فتح نافذة التعديل
-  const handleEditClick = () => {
-    if (selectedClient) {
-      setEditFormData({
-        fullName: selectedClient.fullName,
-        phone: selectedClient.phone,
-        email: selectedClient.email || '',
-        address: selectedClient.address || '',
-      });
-      setEditDialogOpen(true);
-    }
-    handleMenuClose();
-  };
-
-  // فتح نافذة التفعيل
-    const handleActivateClick = () => {
+    // ========== Edit ==========
+    const handleEditClick = () => {
         if (selectedClient) {
-            // التأكد من أن plans مصفوفة وغير فارغة قبل الوصول لأول عنصر
-            const initialPlanId = selectedClient.activeSubscription?.planId
-                || (Array.isArray(plans) && plans.length > 0 ? plans[0].id : 0);
-
-            setSelectedPlanId(initialPlanId);
-            setActivateDialogOpen(true);
+            setEditFormData({
+                fullName: selectedClient.fullName,
+                phone: selectedClient.phone,
+                email: selectedClient.email || '',
+                address: selectedClient.address || '',
+            });
+            setEditDialogOpen(true);
         }
         handleMenuClose();
     };
 
-  // فتح نافذة الحذف
-  const handleDeleteClick = () => {
-    setDeleteDialogOpen(true);
-    handleMenuClose();
-  };
+    const handleSaveEdit = async () => {
+        if (!selectedClient) return;
+        setSubmitting(true);
+        setError('');
+        try {
+            await api.put(`/clients/${selectedClient.id}`, editFormData);
+            setSuccess('تم تحديث بيانات العميل بنجاح');
+            setTimeout(() => setSuccess(''), 3000);
+            setEditDialogOpen(false);
+            fetchClients();
+        } catch (err: any) {
+            setError(err.response?.data?.message || 'حدث خطأ أثناء التحديث');
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
-  // حفظ التعديلات
-  const handleSaveEdit = async () => {
-    setSubmitting(true);
-    setError('');
-    try {
-      await api.put(`/clients/${selectedClient?.id}`, editFormData);
-      setSuccess('تم تحديث بيانات العميل بنجاح');
-      setTimeout(() => setSuccess(''), 3000);
-      setEditDialogOpen(false);
-      fetchClients();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'حدث خطأ أثناء التحديث');
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    // ========== Suspend ==========
+    const handleSuspendClick = () => {
+        setSuspendDialogOpen(true);
+        handleMenuClose();
+    };
 
-  // تفعيل الاشتراك
-  const handleActivateSubscription = async () => {
-    setSubmitting(true);
-    setError('');
-    try {
-      const selectedPlan = plans.find(p => p.id === selectedPlanId);
-      if (!selectedPlan) {
-        setError('الرجاء اختيار باقة صحيحة');
-        setSubmitting(false);
-        return;
-      }
+    const handleSuspendConfirm = async () => {
+        if (!selectedClient) return;
+        setSubmitting(true);
+        setError('');
+        try {
+            await api.post(`/clients/${selectedClient.id}/suspend`);
+            setSuccess('تم إيقاف العميل وتعطيله في RADIUS بنجاح');
+            setTimeout(() => setSuccess(''), 3000);
+            setSuspendDialogOpen(false);
+            fetchClients();
+        } catch (err: any) {
+            setError(err.response?.data?.message || 'فشل إيقاف العميل');
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
-      // إنشاء اشتراك جديد للعميل
-      await api.post('/subscriptions', {
-        userId: selectedClient?.id,
-        planId: selectedPlanId,
-        days: selectedPlan.durationDays,
-      });
+    // ========== Activate ==========
+    const handleActivateClick = () => {
+        setActivateDialogOpen(true);
+        handleMenuClose();
+    };
 
-      setSuccess('تم تفعيل الاشتراك بنجاح');
-      setTimeout(() => setSuccess(''), 3000);
-      setActivateDialogOpen(false);
-      fetchClients();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'حدث خطأ أثناء التفعيل');
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    const handleActivateConfirm = async () => {
+        if (!selectedClient) return;
+        setSubmitting(true);
+        setError('');
+        try {
+            await api.post(`/clients/${selectedClient.id}/activate`);
+            setSuccess('تم تفعيل العميل في النظام وRADIUS بنجاح');
+            setTimeout(() => setSuccess(''), 3000);
+            setActivateDialogOpen(false);
+            fetchClients();
+        } catch (err: any) {
+            setError(err.response?.data?.message || 'فشل تفعيل العميل');
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
-  // حذف العميل
-  const handleDeleteClient = async () => {
-    setSubmitting(true);
-    try {
-      await api.delete(`/clients/${selectedClient?.id}`);
-      setSuccess('تم حذف العميل بنجاح');
-      setTimeout(() => setSuccess(''), 3000);
-      setDeleteDialogOpen(false);
-      fetchClients();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'حدث خطأ أثناء الحذف');
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    // ========== Delete (soft) ==========
+    const handleDeleteClick = () => {
+        setDeleteDialogOpen(true);
+        handleMenuClose();
+    };
 
-  // تنسيق التاريخ
-  const formatDate = (dateString: string) => {
-    if (!dateString) return '-';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('ar-EG');
-  };
+    const handleDeleteConfirm = async () => {
+        if (!selectedClient) return;
+        setSubmitting(true);
+        try {
+            await api.delete(`/clients/${selectedClient.id}`);
+            setSuccess('تم حذف العميل بنجاح');
+            setTimeout(() => setSuccess(''), 3000);
+            setDeleteDialogOpen(false);
+            fetchClients();
+        } catch (err: any) {
+            setError(err.response?.data?.message || 'فشل الحذف');
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
-  // حساب الأيام المتبقية
-  const getDaysRemaining = (endDate: string) => {
-    if (!endDate) return null;
-    const end = new Date(endDate);
-    const today = new Date();
-    const diffTime = end.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
-  };
+    // ========== Permanent Delete ==========
+    const handlePermanentDeleteClick = () => {
+        setPermanentDeleteDialogOpen(true);
+        handleMenuClose();
+    };
 
-  return (
-    <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">العملاء</Typography>
+    const handlePermanentDeleteConfirm = async () => {
+        if (!selectedClient) return;
+        setSubmitting(true);
+        try {
+            await api.delete(`/clients/${selectedClient.id}/permanent`);
+            setSuccess('تم حذف العميل نهائياً من النظام وRADIUS');
+            setTimeout(() => setSuccess(''), 3000);
+            setPermanentDeleteDialogOpen(false);
+            fetchClients();
+        } catch (err: any) {
+            setError(err.response?.data?.message || 'فشل الحذف النهائي');
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const formatDate = (dateString?: string) => {
+        if (!dateString) return '-';
+        return new Date(dateString).toLocaleDateString('ar-EG');
+    };
+
+    const getDaysRemaining = (endDate?: string) => {
+        if (!endDate) return null;
+        const diff = new Date(endDate).getTime() - Date.now();
+        return Math.ceil(diff / (1000 * 60 * 60 * 24));
+    };
+
+    const getStatusChip = (status: string) => {
+        switch (status) {
+            case 'Active':
+                return <Chip label="نشط" color="success" size="small" />;
+            case 'Suspended':
+                return <Chip label="موقوف" color="warning" size="small" />;
+            case 'Expired':
+                return <Chip label="منتهي" color="error" size="small" />;
+            default:
+                return <Chip label={status} size="small" />;
+        }
+    };
+
+    return (
         <Box>
-          <Button
-            variant="outlined"
-            startIcon={<RefreshIcon />}
-            onClick={fetchClients}
-            sx={{ mr: 1 }}
-          >
-            تحديث
+            <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+                <Typography variant="h4">العملاء</Typography>
+                <Box>
+                    <Button variant="outlined" startIcon={<RefreshIcon />} onClick={fetchClients} sx={{ mr: 1 }}>
+                        تحديث
           </Button>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => navigate('/clients/new')}
-          >
-            عميل جديد
+                    <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/clients/new')}>
+                        عميل جديد
           </Button>
-        </Box>
-      </Box>
+                </Box>
+            </Box>
 
-      {success && (
-        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>
-          {success}
-        </Alert>
-      )}
-
-      <Paper sx={{ p: 2, mb: 2 }}>
-        <TextField
-          fullWidth
-          variant="outlined"
-          placeholder="بحث باسم المستخدم، الاسم الكامل، رقم الهاتف، أو الرقم الوطني..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon />
-              </InputAdornment>
-            ),
-          }}
-        />
-      </Paper>
-
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead sx={{ backgroundColor: '#f5f5f5' }}>
-            <TableRow>
-              <TableCell>#</TableCell>
-              <TableCell>اسم المستخدم</TableCell>
-              <TableCell>الاسم الكامل</TableCell>
-              <TableCell>رقم الهاتف</TableCell>
-              <TableCell>الباقة الحالية</TableCell>
-              <TableCell>تاريخ الانتهاء</TableCell>
-              <TableCell>الحالة</TableCell>
-              <TableCell align="center">الإجراءات</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {clients.map((client, idx) => {
-              const daysRemaining = getDaysRemaining(client.activeSubscription?.endDate || '');
-              const isExpired = daysRemaining !== null && daysRemaining <= 0;
-              const isExpiringSoon = daysRemaining !== null && daysRemaining <= 3 && daysRemaining > 0;
-              
-              return (
-                <TableRow key={client.id} hover>
-                  <TableCell>{idx + 1 + page * rowsPerPage}</TableCell>
-                  <TableCell>{client.username}</TableCell>
-                  <TableCell>{client.fullName}</TableCell>
-                  <TableCell>{client.phone}</TableCell>
-                  <TableCell>
-                    {client.activeSubscription?.planName || (
-                      <Chip label="لا يوجد اشتراك" size="small" color="warning" />
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {client.activeSubscription?.endDate ? (
-                      <Box>
-                        {formatDate(client.activeSubscription.endDate)}
-                        {daysRemaining !== null && daysRemaining > 0 && (
-                          <Chip
-                            label={`${daysRemaining} يوم متبقي`}
-                            size="small"
-                            color={daysRemaining <= 3 ? 'warning' : 'info'}
-                            sx={{ ml: 1 }}
-                          />
-                        )}
-                        {isExpired && (
-                          <Chip label="منتهي" size="small" color="error" sx={{ ml: 1 }} />
-                        )}
-                      </Box>
-                    ) : '-'}
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={client.status === 'Active' ? 'نشط' : 'غير نشط'}
-                      color={client.status === 'Active' ? 'success' : 'default'}
-                      size="small"
-                    />
-                    {!client.activeSubscription?.isActive && client.status === 'Active' && (
-                      <Chip label="بدون اشتراك" size="small" color="warning" sx={{ ml: 1 }} />
-                    )}
-                  </TableCell>
-                  <TableCell align="center">
-                    <IconButton
-                      size="small"
-                      onClick={(e) => handleMenuOpen(e, client)}
-                    >
-                      <MoreVertIcon />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-        <TablePagination
-          rowsPerPageOptions={[5, 10, 25, 50]}
-          component="div"
-          count={total}
-          rowsPerPage={rowsPerPage}
-          page={page}
-          onPageChange={(_, newPage) => setPage(newPage)}
-          onRowsPerPageChange={(e) => {
-            setRowsPerPage(parseInt(e.target.value, 10));
-            setPage(0);
-          }}
-        />
-      </TableContainer>
-
-      {/* القائمة المنسدلة (3 نقاط) */}
-      <Menu
-        anchorEl={anchorEl}
-        open={Boolean(anchorEl)}
-        onClose={handleMenuClose}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        <MenuItem onClick={handleEditClick}>
-          <ListItemIcon>
-            <EditIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>تعديل البيانات</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={handleActivateClick}>
-          <ListItemIcon>
-            <ActivateIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>تفعيل الاشتراك / تجديد</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={handleDeleteClick} sx={{ color: 'error.main' }}>
-          <ListItemIcon>
-            <DeleteIcon fontSize="small" color="error" />
-          </ListItemIcon>
-          <ListItemText>حذف المشترك</ListItemText>
-        </MenuItem>
-      </Menu>
-
-      {/* نافذة تعديل البيانات */}
-      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          تعديل بيانات العميل
-          <IconButton
-            aria-label="close"
-            onClick={() => setEditDialogOpen(false)}
-            sx={{ position: 'absolute', right: 8, top: 8 }}
-          >
-            <CloseIcon />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent>
-          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-          <Grid container spacing={2} sx={{ mt: 1 }}>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="الاسم الكامل"
-                value={editFormData.fullName}
-                onChange={(e) => setEditFormData({ ...editFormData, fullName: e.target.value })}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="رقم الهاتف"
-                value={editFormData.phone}
-                onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="البريد الإلكتروني"
-                type="email"
-                value={editFormData.email}
-                onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="العنوان"
-                multiline
-                rows={2}
-                value={editFormData.address}
-                onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
-              />
-            </Grid>
-          </Grid>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditDialogOpen(false)}>إلغاء</Button>
-          <Button onClick={handleSaveEdit} variant="contained" disabled={submitting}>
-            {submitting ? <CircularProgress size={24} /> : 'حفظ التغييرات'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* نافذة تفعيل الاشتراك */}
-      <Dialog open={activateDialogOpen} onClose={() => setActivateDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          تفعيل اشتراك / تجديد
-          <IconButton
-            aria-label="close"
-            onClick={() => setActivateDialogOpen(false)}
-            sx={{ position: 'absolute', right: 8, top: 8 }}
-          >
-            <CloseIcon />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent>
-          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-          
-          <Paper variant="outlined" sx={{ p: 2, mb: 3, mt: 2, bgcolor: '#f9f9f9' }}>
-            <Typography variant="subtitle2" color="textSecondary">بيانات العميل</Typography>
-            <Typography><strong>الاسم:</strong> {selectedClient?.fullName}</Typography>
-            <Typography><strong>اسم المستخدم:</strong> {selectedClient?.username}</Typography>
-            <Typography><strong>رقم الهاتف:</strong> {selectedClient?.phone}</Typography>
-            {selectedClient?.activeSubscription?.planName && (
-              <Typography>
-                <strong>الباقة الحالية:</strong> {selectedClient.activeSubscription.planName}
-                <br />
-                <strong>تنتهي في:</strong> {formatDate(selectedClient.activeSubscription.endDate)}
-              </Typography>
+            {success && (
+                <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>
+                    {success}
+                </Alert>
             )}
-          </Paper>
+            {error && (
+                <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+                    {error}
+                </Alert>
+            )}
 
-                  <FormControl fullWidth>
-                      <InputLabel id="plan-select-label">اختر الباقة</InputLabel>
+            <Paper sx={{ p: 2, mb: 2 }}>
+                <TextField
+                    fullWidth
+                    variant="outlined"
+                    placeholder="بحث باسم المستخدم، الاسم، الهاتف، أو الرقم الوطني..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    InputProps={{
+                        startAdornment: (
+                            <InputAdornment position="start">
+                                <SearchIcon />
+                            </InputAdornment>
+                        ),
+                    }}
+                />
+            </Paper>
 
-                      <Select
-                          labelId="plan-select-label"
-                          id="plan-select"
-                          value={selectedPlanId}
-                          onChange={(e) => setSelectedPlanId(Number(e.target.value))}
-                          label="اختر الباقة"
-                      >
-                          {Array.isArray(plans) &&
-                              plans.map((plan) => (
-                                  <MenuItem key={plan.id} value={plan.id}>
-                                      {plan.name} - {plan.speed} - {(plan.price || 0).toLocaleString()} ل.س
-                                  </MenuItem>
-                              ))}
-                      </Select>
-                  </FormControl>
+            <TableContainer component={Paper}>
+                <Table>
+                    <TableHead sx={{ backgroundColor: '#f5f5f5' }}>
+                        <TableRow>
+                            <TableCell>#</TableCell>
+                            <TableCell>اسم المستخدم</TableCell>
+                            <TableCell>الاسم الكامل</TableCell>
+                            <TableCell>الهاتف</TableCell>
+                            <TableCell>الباقة</TableCell>
+                            <TableCell>تاريخ الانتهاء</TableCell>
+                            <TableCell>الحالة</TableCell>
+                            <TableCell align="center">الإجراءات</TableCell>
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {loading ? (
+                            <TableRow>
+                                <TableCell colSpan={8} align="center">
+                                    <CircularProgress size={32} />
+                                </TableCell>
+                            </TableRow>
+                        ) : clients.length === 0 ? (
+                            <TableRow>
+                                <TableCell colSpan={8} align="center">
+                                    لا يوجد عملاء
+                </TableCell>
+                            </TableRow>
+                        ) : (
+                                    clients.map((client, idx) => {
+                                        const days = getDaysRemaining(client.activeSubscription?.endDate);
+                                        return (
+                                            <TableRow key={client.id} hover>
+                                                <TableCell>{idx + 1 + page * rowsPerPage}</TableCell>
+                                                <TableCell>{client.username}</TableCell>
+                                                <TableCell>{client.fullName}</TableCell>
+                                                <TableCell>{client.phone}</TableCell>
+                                                <TableCell>
+                                                    {client.activeSubscription?.planName || (
+                                                        <Chip label="لا يوجد" size="small" color="warning" />
+                                                    )}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {client.activeSubscription?.endDate ? (
+                                                        <Box>
+                                                            {formatDate(client.activeSubscription.endDate)}
+                                                            {days !== null && days > 0 && (
+                                                                <Chip
+                                                                    label={`${days} يوم`}
+                                                                    size="small"
+                                                                    color={days <= 3 ? 'warning' : 'info'}
+                                                                    sx={{ ml: 1 }}
+                                                                />
+                                                            )}
+                                                            {days !== null && days <= 0 && (
+                                                                <Chip label="منتهي" size="small" color="error" sx={{ ml: 1 }} />
+                                                            )}
+                                                        </Box>
+                                                    ) : '-'}
+                                                </TableCell>
+                                                <TableCell>{getStatusChip(client.status)}</TableCell>
+                                                <TableCell align="center">
+                                                    <IconButton size="small" onClick={(e) => handleMenuOpen(e, client)}>
+                                                        <MoreVertIcon />
+                                                    </IconButton>
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })
+                                )}
+                    </TableBody>
+                </Table>
+
+                <TablePagination
+                    rowsPerPageOptions={[5, 10, 25, 50]}
+                    component="div"
+                    count={total}
+                    rowsPerPage={rowsPerPage}
+                    page={page}
+                    onPageChange={(_, newPage) => setPage(newPage)}
+                    onRowsPerPageChange={(e) => {
+                        setRowsPerPage(parseInt(e.target.value, 10));
+                        setPage(0);
+                    }}
+                    labelRowsPerPage="عدد الصفوف:"
+                />
+            </TableContainer>
+
+            {/* ========== Menu ========== */}
+            <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
+                <MenuItem onClick={handleEditClick}>
+                    <ListItemIcon><EditIcon fontSize="small" /></ListItemIcon>
+                    <ListItemText>تعديل البيانات</ListItemText>
+                </MenuItem>
+
+                {selectedClient?.status !== 'Active' && (
+                    <MenuItem onClick={handleActivateClick}>
+                        <ListItemIcon><ActivateIcon fontSize="small" color="success" /></ListItemIcon>
+                        <ListItemText>تفعيل العميل</ListItemText>
+                    </MenuItem>
+                )}
+
+                {selectedClient?.status === 'Active' && (
+                    <MenuItem onClick={handleSuspendClick}>
+                        <ListItemIcon><SuspendIcon fontSize="small" color="warning" /></ListItemIcon>
+                        <ListItemText>إيقاف العميل</ListItemText>
+                    </MenuItem>
+                )}
+
+                <Divider />
+
+                <MenuItem onClick={handleDeleteClick}>
+                    <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
+                    <ListItemText>حذف</ListItemText>
+                </MenuItem>
+
+                <MenuItem onClick={handlePermanentDeleteClick}>
+                    <ListItemIcon><DeleteForeverIcon fontSize="small" color="error" /></ListItemIcon>
+                    <ListItemText>حذف نهائي (من RADIUS أيضاً)</ListItemText>
+                </MenuItem>
+            </Menu>
+
+            {/* ========== Edit Dialog ========== */}
+            <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>تعديل بيانات العميل</DialogTitle>
+                <DialogContent>
+                    <TextField fullWidth label="الاسم الكامل" margin="normal"
+                        value={editFormData.fullName}
+                        onChange={(e) => setEditFormData({ ...editFormData, fullName: e.target.value })} />
+                    <TextField fullWidth label="الهاتف" margin="normal"
+                        value={editFormData.phone}
+                        onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })} />
+                    <TextField fullWidth label="البريد" margin="normal"
+                        value={editFormData.email}
+                        onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })} />
+                    <TextField fullWidth label="العنوان" margin="normal"
+                        value={editFormData.address}
+                        onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })} />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setEditDialogOpen(false)} startIcon={<CloseIcon />}>إلغاء</Button>
+                    <Button onClick={handleSaveEdit} variant="contained" disabled={submitting} startIcon={<SaveIcon />}>
+                        {submitting ? <CircularProgress size={20} /> : 'حفظ'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* ========== Suspend Dialog ========== */}
+            <Dialog open={suspendDialogOpen} onClose={() => setSuspendDialogOpen(false)}>
+                <DialogTitle>تأكيد إيقاف العميل</DialogTitle>
+                <DialogContent>
+                    هل تريد إيقاف العميل <strong>{selectedClient?.fullName}</strong>؟
+          <br />
+          سيتم تعطيله في RADIUS ولن يتمكن من الاتصال.
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setActivateDialogOpen(false)}>إلغاء</Button>
-          <Button onClick={handleActivateSubscription} variant="contained" color="success" disabled={submitting}>
-            {submitting ? <CircularProgress size={24} /> : 'تفعيل الاشتراك'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+                <DialogActions>
+                    <Button onClick={() => setSuspendDialogOpen(false)}>إلغاء</Button>
+                    <Button onClick={handleSuspendConfirm} color="warning" variant="contained" disabled={submitting}>
+                        {submitting ? <CircularProgress size={20} /> : 'إيقاف'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
-      {/* نافذة تأكيد الحذف */}
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
-        <DialogTitle>تأكيد الحذف</DialogTitle>
-        <DialogContent>
-          <Typography>
-            هل أنت متأكد من حذف العميل <strong>{selectedClient?.fullName}</strong>؟
-            <br />
-            هذا الإجراء لا يمكن التراجع عنه.
-          </Typography>
+            {/* ========== Activate Dialog ========== */}
+            <Dialog open={activateDialogOpen} onClose={() => setActivateDialogOpen(false)}>
+                <DialogTitle>تأكيد تفعيل العميل</DialogTitle>
+                <DialogContent>
+                    هل تريد تفعيل العميل <strong>{selectedClient?.fullName}</strong>؟
+          <br />
+          يجب أن يكون لديه اشتراك نشط.
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>إلغاء</Button>
-          <Button onClick={handleDeleteClient} color="error" variant="contained" disabled={submitting}>
-            {submitting ? <CircularProgress size={24} /> : 'حذف'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Box>
-  );
+                <DialogActions>
+                    <Button onClick={() => setActivateDialogOpen(false)}>إلغاء</Button>
+                    <Button onClick={handleActivateConfirm} color="success" variant="contained" disabled={submitting}>
+                        {submitting ? <CircularProgress size={20} /> : 'تفعيل'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* ========== Delete Dialog ========== */}
+            <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+                <DialogTitle>تأكيد الحذف</DialogTitle>
+                <DialogContent>
+                    هل تريد حذف العميل <strong>{selectedClient?.fullName}</strong>؟
+        </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setDeleteDialogOpen(false)}>إلغاء</Button>
+                    <Button onClick={handleDeleteConfirm} color="error" variant="contained" disabled={submitting}>
+                        {submitting ? <CircularProgress size={20} /> : 'حذف'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* ========== Permanent Delete Dialog ========== */}
+            <Dialog open={permanentDeleteDialogOpen} onClose={() => setPermanentDeleteDialogOpen(false)}>
+                <DialogTitle sx={{ color: 'error.main' }}>حذف نهائي</DialogTitle>
+                <DialogContent>
+                    <Alert severity="error" sx={{ mb: 2 }}>
+                        هذا الإجراء لا يمكن التراجع عنه!
+          </Alert>
+          سيتم حذف العميل <strong>{selectedClient?.fullName}</strong> نهائياً من:
+          <ul>
+                        <li>قاعدة بيانات النظام</li>
+                        <li>خادم RADIUS</li>
+                    </ul>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setPermanentDeleteDialogOpen(false)}>إلغاء</Button>
+                    <Button onClick={handlePermanentDeleteConfirm} color="error" variant="contained" disabled={submitting}>
+                        {submitting ? <CircularProgress size={20} /> : 'حذف نهائي'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        </Box>
+    );
 }

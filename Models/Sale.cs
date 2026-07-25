@@ -1,19 +1,29 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
 
 namespace ISPSystem.Models
 {
     public class Sale
     {
         public int Id { get; set; }
+
         public int ProductId { get; set; }
-        public int Quantity { get; set; }
-        public string Customer { get; set; }
-        public decimal Total { get; set; }
-        public DateTime Date { get; set; }
         public Product Product { get; set; }
+
+        public string ProductName { get; set; }
+        public string ModelNumber { get; set; }
+
+        public int Quantity { get; set; }
+        public decimal UnitSellPrice { get; set; }
+        public decimal Total { get; set; }
+
+        public int? ClientId { get; set; }
+        public Client Client { get; set; }
+        public string ClientName { get; set; }            // اسم العميل
+
+        public string SerialNumber { get; set; }          // السيريال المباع
+        public DateTime Date { get; set; } = DateTime.Now;
+        public string Notes { get; set; }
+
+        public int? CreatedBy { get; set; }
     }
 }

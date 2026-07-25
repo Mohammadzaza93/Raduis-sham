@@ -1,5 +1,4 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Design;  // ← أضف هذا السطر
 using ISPSystem.Models;
 
 namespace ISPSystem.Data
@@ -27,6 +26,9 @@ namespace ISPSystem.Data
         public DbSet<AuditLog> AuditLogs { get; set; }
         public DbSet<SystemSetting> SystemSettings { get; set; }
         public DbSet<Device> Device { get; set; }
+        public DbSet<MikroTikDevice> MikroTikDevices { get; set; }
+        // سنضيف MikroTikDevices لاحقاً في الجزء ب
+        // public DbSet<MikroTikDevice> MikroTikDevices { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -43,8 +45,36 @@ namespace ISPSystem.Data
             modelBuilder.Entity<User>()
                 .HasIndex(u => u.Username)
                 .IsUnique();
+
+            // Product
+            modelBuilder.Entity<Product>()
+                .HasIndex(p => p.ModelNumber);
+
+            modelBuilder.Entity<Product>()
+                .Property(p => p.CostPrice)
+                .HasPrecision(18, 2);
+
+            modelBuilder.Entity<Product>()
+                .Property(p => p.SellPrice)
+                .HasPrecision(18, 2);
+
+            // Purchase
+            modelBuilder.Entity<Purchase>()
+                .Property(p => p.CostPerUnit)
+                .HasPrecision(18, 2);
+
+            modelBuilder.Entity<Purchase>()
+                .Property(p => p.Total)
+                .HasPrecision(18, 2);
+
+            // Sale
+            modelBuilder.Entity<Sale>()
+                .Property(s => s.UnitSellPrice)
+                .HasPrecision(18, 2);
+
+            modelBuilder.Entity<Sale>()
+                .Property(s => s.Total)
+                .HasPrecision(18, 2);
         }
     }
-
-   
 }

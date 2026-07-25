@@ -1,4 +1,4 @@
-ï»¿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ISPSystem.Services;
 using ISPSystem.DTOs;
@@ -9,13 +9,13 @@ using System.Threading.Tasks;
 namespace ISPSystem.Controllers
 {
     [ApiController]
-    [Route("api/sales")]
+    [Route("api/purchases")]
     [Authorize]
-    public class SalesController : ControllerBase
+    public class PurchasesController : ControllerBase
     {
-        private readonly SaleService _service;
+        private readonly PurchaseService _service;
 
-        public SalesController(SaleService service)
+        public PurchasesController(PurchaseService service)
         {
             _service = service;
         }
@@ -27,17 +27,14 @@ namespace ISPSystem.Controllers
             return Ok(ApiResponse<object>.Ok(result));
         }
 
-        [HttpPost("sell")]
-        [Authorize(Roles = "Admin,Accountant,SalesPerson,Employee")]
-        public async Task<IActionResult> Sell([FromBody] CreateSaleDto dto)
+        [HttpPost]
+        [Authorize(Roles = "Admin,Accountant,Employee")]
+        public async Task<IActionResult> Create([FromBody] CreatePurchaseDto dto)
         {
-            if (dto == null)
-                return BadRequest(ApiResponse<string>.Fail("Ø¨ÙŠØ§Ù†Ø§Øª Ø·Ù„Ø¨ Ø§Ù„Ø¨ÙŠØ¹ ØºÙŠØ± ØµØ§Ù„Ø­Ø©"));
-
             try
             {
-                var sale = await _service.Sell(dto);
-                return Ok(ApiResponse<object>.Ok(sale, "ØªÙ… ØªØ³Ø¬ÙŠÙ„ Ø¹Ù…Ù„ÙŠØ© Ø§Ù„Ø¨ÙŠØ¹ Ø¨Ù†Ø¬Ø§Ø­"));
+                var purchase = await _service.Create(dto);
+                return Ok(ApiResponse<object>.Ok(purchase, "Êã ÊÓÌíá ÚãáíÉ ÇáÔÑÇÁ ÈäÌÇÍ"));
             }
             catch (Exception ex)
             {

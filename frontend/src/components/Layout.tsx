@@ -60,6 +60,7 @@ const menuItems = [
   { path: '/client-portal', label: 'بوابة العميل', icon: <AccountCircleIcon /> },
   { path: '/reports', label: 'التقارير', icon: <TrendingUpIcon /> },
   { path: '/settings', label: 'الإعدادات', icon: <SettingsIcon /> },
+  { path: '/mikrotik-devices', label: 'أجهزة MikroTik', icon: <SettingsIcon /> },
 ];
 
 export default function Layout() {

@@ -20,25 +20,29 @@ namespace ISPSystem.Controllers
         private readonly UserService _userService;
         private readonly AppDbContext _context;
         private readonly AuditService _audit;
+        private readonly RadiusService _radius;
 
-        public ClientsController(UserService userService, AppDbContext context, AuditService audit)
+        public ClientsController(
+            UserService userService,
+            AppDbContext context,
+            AuditService audit,
+            RadiusService radius)
         {
             _userService = userService;
             _context = context;
             _audit = audit;
+            _radius = radius;
         }
 
-        // 📋 الحصول على جميع العملاء مع ميزة البحث والتقسيم (Pagination)
+        // 📋 الحصول على جميع العملاء مع البحث والتقسيم
         [HttpGet]
         public async Task<IActionResult> GetAll([FromQuery] ClientQuery query)
         {
-            // تأمين قيم افتراضية لضمان عدم حدوث خطأ تقسيم على صفر
             if (query.Page <= 0) query.Page = 1;
             if (query.PageSize <= 0) query.PageSize = 10;
 
             var clientsQuery = _context.Clients.AsQueryable();
 
-            // فحص الفلترة والبحث
             if (!string.IsNullOrEmpty(query.Search))
             {
                 var search = query.Search.Trim();
@@ -49,10 +53,15 @@ namespace ISPSystem.Controllers
                     c.NationalId.Contains(search));
             }
 
+            if (!string.IsNullOrEmpty(query.Status))
+            {
+                clientsQuery = clientsQuery.Where(c => c.Status == query.Status);
+            }
+
             var total = await clientsQuery.CountAsync();
 
             var data = await clientsQuery
-                .OrderByDescending(c => c.CreatedAt) // ترتيب منطقي لعرض الأحدث أولاً
+                .OrderByDescending(c => c.CreatedAt)
                 .Skip((query.Page - 1) * query.PageSize)
                 .Take(query.PageSize)
                 .Select(c => new
@@ -67,7 +76,6 @@ namespace ISPSystem.Controllers
                     c.Status,
                     c.CreatedAt,
                     c.NationalId,
-                    // جلب معلومات الاشتراك النشط بشكل مباشر ومحمي
                     ActiveSubscription = _context.Subscriptions
                         .Where(s => s.ClientId == c.Id && s.IsActive)
                         .OrderByDescending(s => s.EndDate)
@@ -76,7 +84,8 @@ namespace ISPSystem.Controllers
                             s.Id,
                             PlanName = s.Plan != null ? s.Plan.Name : "باقة غير معروفة",
                             s.EndDate,
-                            s.IsActive
+                            s.IsActive,
+                            DaysRemaining = (s.EndDate - DateTime.Now).Days
                         })
                         .FirstOrDefault()
                 })
@@ -91,7 +100,18 @@ namespace ISPSystem.Controllers
             }));
         }
 
-        // ➕ إضافة عميل جديد (خاص بالمسؤولين والموظفين)
+        // 🔍 الحصول على عميل محدد
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var client = await _userService.GetClientById(id);
+            if (client == null)
+                return NotFound(ApiResponse<string>.Fail("العميل غير موجود"));
+
+            return Ok(ApiResponse<object>.Ok(client));
+        }
+
+        // ➕ إضافة عميل جديد
         [HttpPost]
         [Authorize(Roles = "Admin,Employee")]
         public async Task<IActionResult> Create([FromBody] CreateClientDto dto)
@@ -103,7 +123,6 @@ namespace ISPSystem.Controllers
             {
                 var client = await _userService.CreateClient(dto);
 
-                // إرجاع البيانات المجهزة للعرض في الـ Frontend
                 return Ok(ApiResponse<object>.Ok(new
                 {
                     client = new
@@ -116,9 +135,10 @@ namespace ISPSystem.Controllers
                         client.MacAddress,
                         client.IpAddress,
                         client.NationalId,
-                        Password = client.Password // لعرضها مرة واحدة عند الإنشاء
+                        client.Status,
+                        Password = client.Password // تُعرض مرة واحدة فقط
                     },
-                    message = "تم إنشاء العميل بنجاح"
+                    message = "تم إنشاء العميل بنجاح وإضافته إلى RADIUS"
                 }));
             }
             catch (Exception ex)
@@ -127,7 +147,7 @@ namespace ISPSystem.Controllers
             }
         }
 
-        // 🔄 تحديث بيانات العميل وإعدادات الشبكة الخاصة به
+        // 🔄 تحديث بيانات العميل
         [HttpPut("{id}")]
         [Authorize(Roles = "Admin,Employee")]
         public async Task<IActionResult> Update(int id, [FromBody] UpdateClientDto dto)
@@ -139,34 +159,89 @@ namespace ISPSystem.Controllers
             if (client == null)
                 return NotFound(ApiResponse<string>.Fail("العميل غير موجود"));
 
-            // تحديث الحقول الأساسية
             client.FullName = dto.FullName;
             client.Phone = dto.Phone;
             client.Email = dto.Email;
             client.Address = dto.Address;
 
-            // تحديث إعدادات الشبكة إذا كانت ممررة في الـ DTO الموحد
-            if (!string.IsNullOrEmpty(dto.MacAddress)) client.MacAddress = dto.MacAddress;
-            if (!string.IsNullOrEmpty(dto.IpAddress)) client.IpAddress = dto.IpAddress;
+            if (!string.IsNullOrEmpty(dto.MacAddress))
+                client.MacAddress = dto.MacAddress;
+
+            if (!string.IsNullOrEmpty(dto.IpAddress))
+                client.IpAddress = dto.IpAddress;
 
             await _context.SaveChangesAsync();
             await _audit.Log("Update", "Client", id);
 
-            return Ok(ApiResponse<Client>.Ok(client));
+            return Ok(ApiResponse<object>.Ok(client, "تم تحديث بيانات العميل بنجاح"));
         }
 
-        // 🔍 الحصول على عميل محدد بواسطة الـ ID
-        [HttpGet("{id}")]
-        public async Task<IActionResult> GetById(int id)
+        // ⛔ إيقاف العميل (Suspend)
+        [HttpPost("{id}/suspend")]
+        [Authorize(Roles = "Admin,Support,Employee")]
+        public async Task<IActionResult> Suspend(int id)
         {
-            var client = await _userService.GetClientById(id);
+            var client = await _context.Clients.FindAsync(id);
             if (client == null)
                 return NotFound(ApiResponse<string>.Fail("العميل غير موجود"));
 
-            return Ok(ApiResponse<object>.Ok(client));
+            if (client.Status == "Suspended")
+                return BadRequest(ApiResponse<string>.Fail("العميل موقوف بالفعل"));
+
+            client.Status = "Suspended";
+            await _context.SaveChangesAsync();
+
+            // تعطيل في RADIUS (المسؤول الرئيسي عن الاتصال)
+            var radiusOk = await _radius.DisableUser(client.Username);
+
+            await _audit.Log("Suspend", "Client", id);
+
+            return Ok(ApiResponse<object>.Ok(new
+            {
+                clientId = id,
+                status = "Suspended",
+                radiusDisabled = radiusOk,
+                message = "تم إيقاف العميل بنجاح"
+            }));
         }
 
-        // ❌ حذف عميل من النظام نهائياً (صلاحية Admin فقط)
+        // ▶️ تفعيل العميل (Activate)
+        [HttpPost("{id}/activate")]
+        [Authorize(Roles = "Admin,Support,Employee")]
+        public async Task<IActionResult> Activate(int id)
+        {
+            var client = await _context.Clients.FindAsync(id);
+            if (client == null)
+                return NotFound(ApiResponse<string>.Fail("العميل غير موجود"));
+
+            if (client.Status == "Active")
+                return BadRequest(ApiResponse<string>.Fail("العميل مفعّل بالفعل"));
+
+            // التحقق من وجود اشتراك نشط
+            var hasActiveSub = await _context.Subscriptions
+                .AnyAsync(s => s.ClientId == id && s.IsActive && s.EndDate > DateTime.Now);
+
+            if (!hasActiveSub)
+                return BadRequest(ApiResponse<string>.Fail("لا يمكن تفعيل العميل لأنه لا يملك اشتراكاً نشطاً"));
+
+            client.Status = "Active";
+            await _context.SaveChangesAsync();
+
+            // تفعيل في RADIUS
+            var radiusOk = await _radius.EnableUser(client.Username);
+
+            await _audit.Log("Activate", "Client", id);
+
+            return Ok(ApiResponse<object>.Ok(new
+            {
+                clientId = id,
+                status = "Active",
+                radiusEnabled = radiusOk,
+                message = "تم تفعيل العميل بنجاح"
+            }));
+        }
+
+        // ❌ حذف بسيط (من قاعدة البيانات فقط - للتوافق)
         [HttpDelete("{id}")]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Delete(int id)
@@ -175,11 +250,45 @@ namespace ISPSystem.Controllers
             if (client == null)
                 return NotFound(ApiResponse<string>.Fail("العميل غير موجود"));
 
+            // تعطيل في RADIUS أولاً
+            await _radius.DisableUser(client.Username);
+
             _context.Clients.Remove(client);
             await _context.SaveChangesAsync();
             await _audit.Log("Delete", "Client", id);
 
             return Ok(ApiResponse<string>.Ok("تم حذف العميل بنجاح"));
+        }
+
+        // 🗑️ حذف نهائي (من النظام + RADIUS)
+        [HttpDelete("{id}/permanent")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> DeletePermanent(int id)
+        {
+            var client = await _context.Clients.FindAsync(id);
+            if (client == null)
+                return NotFound(ApiResponse<string>.Fail("العميل غير موجود"));
+
+            var username = client.Username;
+
+            // 1. حذف من RADIUS نهائياً
+            var radiusDeleted = await _radius.DeleteUser(username);
+
+            // 2. حذف الاشتراكات المرتبطة
+            var subscriptions = _context.Subscriptions.Where(s => s.ClientId == id);
+            _context.Subscriptions.RemoveRange(subscriptions);
+
+            // 3. حذف العميل من قاعدة البيانات
+            _context.Clients.Remove(client);
+            await _context.SaveChangesAsync();
+
+            await _audit.Log("DeletePermanent", "Client", id);
+
+            return Ok(ApiResponse<object>.Ok(new
+            {
+                message = "تم حذف العميل نهائياً من النظام وRADIUS",
+                radiusDeleted
+            }));
         }
     }
 }
