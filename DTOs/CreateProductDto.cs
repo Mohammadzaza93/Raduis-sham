@@ -23,4 +23,5 @@ namespace ISPSystem.DTOs
         public int? MinStockAlert { get; set; }
         public bool? IsActive { get; set; }
     }
+
 }

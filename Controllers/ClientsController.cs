@@ -17,6 +17,7 @@ namespace ISPSystem.Controllers
     [Authorize]
     public class ClientsController : ControllerBase
     {
+
         private readonly UserService _userService;
         private readonly AppDbContext _context;
         private readonly AuditService _audit;

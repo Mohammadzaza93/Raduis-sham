@@ -5,10 +5,7 @@ namespace ISPSystem.Data
 {
     public class AppDbContext : DbContext
     {
-        public AppDbContext(DbContextOptions<AppDbContext> options)
-            : base(options)
-        {
-        }
+        public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
         public DbSet<User> Users { get; set; }
         public DbSet<Client> Clients { get; set; }
@@ -27,54 +24,22 @@ namespace ISPSystem.Data
         public DbSet<SystemSetting> SystemSettings { get; set; }
         public DbSet<Device> Device { get; set; }
         public DbSet<MikroTikDevice> MikroTikDevices { get; set; }
-        // سنضيف MikroTikDevices لاحقاً في الجزء ب
-        // public DbSet<MikroTikDevice> MikroTikDevices { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
 
-            modelBuilder.Entity<Client>()
-                .HasIndex(c => c.Username)
-                .IsUnique();
+            modelBuilder.Entity<Client>().HasIndex(c => c.Username).IsUnique();
+            modelBuilder.Entity<Client>().HasIndex(c => c.MacAddress).IsUnique();
+            modelBuilder.Entity<User>().HasIndex(u => u.Username).IsUnique();
+            modelBuilder.Entity<Product>().HasIndex(p => p.ModelNumber);
 
-            modelBuilder.Entity<Client>()
-                .HasIndex(c => c.MacAddress)
-                .IsUnique();
-
-            modelBuilder.Entity<User>()
-                .HasIndex(u => u.Username)
-                .IsUnique();
-
-            // Product
-            modelBuilder.Entity<Product>()
-                .HasIndex(p => p.ModelNumber);
-
-            modelBuilder.Entity<Product>()
-                .Property(p => p.CostPrice)
-                .HasPrecision(18, 2);
-
-            modelBuilder.Entity<Product>()
-                .Property(p => p.SellPrice)
-                .HasPrecision(18, 2);
-
-            // Purchase
-            modelBuilder.Entity<Purchase>()
-                .Property(p => p.CostPerUnit)
-                .HasPrecision(18, 2);
-
-            modelBuilder.Entity<Purchase>()
-                .Property(p => p.Total)
-                .HasPrecision(18, 2);
-
-            // Sale
-            modelBuilder.Entity<Sale>()
-                .Property(s => s.UnitSellPrice)
-                .HasPrecision(18, 2);
-
-            modelBuilder.Entity<Sale>()
-                .Property(s => s.Total)
-                .HasPrecision(18, 2);
+            modelBuilder.Entity<Product>().Property(p => p.CostPrice).HasPrecision(18, 2);
+            modelBuilder.Entity<Product>().Property(p => p.SellPrice).HasPrecision(18, 2);
+            modelBuilder.Entity<Purchase>().Property(p => p.CostPerUnit).HasPrecision(18, 2);
+            modelBuilder.Entity<Purchase>().Property(p => p.Total).HasPrecision(18, 2);
+            modelBuilder.Entity<Sale>().Property(s => s.UnitSellPrice).HasPrecision(18, 2);
+            modelBuilder.Entity<Sale>().Property(s => s.Total).HasPrecision(18, 2);
         }
     }
 }

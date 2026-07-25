@@ -25,7 +25,6 @@ const ClientPortal = lazy(() => import('./pages/ClientPortal'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Settings = lazy(() => import('./pages/Settings'));
 const MikroTikDevices = lazy(() => import('./pages/MikroTikDevices'));
-
 const LoadingFallback = () => (
     <div className="flex items-center justify-center h-screen">
         <div className="relative">

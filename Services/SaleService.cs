@@ -20,7 +20,6 @@ namespace ISPSystem.Services
         public async Task<object> GetAll(int page = 1, int pageSize = 20)
         {
             var total = await _context.Sales.CountAsync();
-
             var data = await _context.Sales
                 .Include(s => s.Product)
                 .Include(s => s.Client)
@@ -53,25 +52,19 @@ namespace ISPSystem.Services
                 throw new Exception("كمية البيع يجب أن تكون أكبر من صفر");
 
             var product = await _context.Products.FindAsync(dto.ProductId);
-            if (product == null)
-                throw new Exception("المنتج غير موجود");
-
-            if (!product.IsActive)
-                throw new Exception("المنتج غير نشط");
-
+            if (product == null) throw new Exception("المنتج غير موجود");
+            if (!product.IsActive) throw new Exception("المنتج غير نشط");
             if (product.Quantity < dto.Quantity)
                 throw new Exception($"الكمية المتوفرة غير كافية (المتوفر: {product.Quantity})");
 
             var unitPrice = dto.UnitSellPrice ?? product.SellPrice;
             var total = unitPrice * dto.Quantity;
-
             string clientName = dto.ClientName;
 
             if (dto.ClientId.HasValue)
             {
                 var client = await _context.Clients.FindAsync(dto.ClientId.Value);
-                if (client != null)
-                    clientName = client.FullName;
+                if (client != null) clientName = client.FullName;
             }
 
             var sale = new Sale
@@ -89,13 +82,11 @@ namespace ISPSystem.Services
                 Notes = dto.Notes
             };
 
-            // خصم الكمية
             product.Quantity -= dto.Quantity;
             product.UpdatedAt = DateTime.Now;
 
             _context.Sales.Add(sale);
             await _context.SaveChangesAsync();
-
             return sale;
         }
     }

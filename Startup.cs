@@ -86,7 +86,6 @@ namespace ISPSystem
             services.AddScoped<PurchaseService>();
             services.AddScoped<RadiusService>();
             services.AddScoped<MikroTikDeviceService>();
-
             // SignalR
             services.AddSignalR();
 
