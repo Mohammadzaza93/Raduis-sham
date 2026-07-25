@@ -68,7 +68,7 @@ namespace ISPSystem
             // Singleton Services
             services.AddSingleton<JwtService>();
             services.AddSingleton<PdfService>();
-            services.AddSingleton<MikroTikService>();
+            services.AddScoped<MikroTikService>();
             services.AddSingleton<PasswordService>();
 
             // Scoped Services
