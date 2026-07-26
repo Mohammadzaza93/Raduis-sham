@@ -1,6 +1,5 @@
 using System;
 using System.Linq;
-using System.Text;
 
 namespace ISPSystem.Helpers
 {
@@ -19,16 +18,12 @@ namespace ISPSystem.Helpers
         {
             var bytes = new byte[6];
             _random.NextBytes(bytes);
-
-            // «Ã⁄· √Ê· »«Ì  locally administered
             bytes[0] = (byte)((bytes[0] | 0x02) & 0xFE);
-
             return string.Join(":", bytes.Select(b => b.ToString("X2")));
         }
 
         public static string GenerateRandomIpAddress()
         {
-            // ‰ÿ«ﬁ Œ«’ (Ì„ﬂ‰ﬂ  €ÌÌ—Â Õ”» ‘»ﬂ ﬂ)
             return $"10.{_random.Next(0, 255)}.{_random.Next(0, 255)}.{_random.Next(2, 254)}";
         }
     }

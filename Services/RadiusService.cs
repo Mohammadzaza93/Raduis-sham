@@ -1,4 +1,4 @@
-﻿using MySql.Data.MySqlClient;
+﻿using MySqlConnector;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System;
@@ -22,8 +22,9 @@ namespace ISPSystem.Services
         {
             try
             {
-                using var conn = new MySqlConnection(_connectionString);
+                await using var conn = new MySqlConnection(_connectionString);
                 await conn.OpenAsync();
+
                 await DeleteUserInternal(conn, username);
 
                 await Exec(conn,
@@ -53,7 +54,7 @@ namespace ISPSystem.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "RADIUS CreateUser failed: {User}", username);
-                return false;
+                return false; // لا يرمي Exception حتى لا يطيح التطبيق
             }
         }
 
@@ -61,7 +62,7 @@ namespace ISPSystem.Services
         {
             try
             {
-                using var conn = new MySqlConnection(_connectionString);
+                await using var conn = new MySqlConnection(_connectionString);
                 await conn.OpenAsync();
                 await Exec(conn, "DELETE FROM radcheck WHERE username=@u AND attribute='Auth-Type'", ("@u", username));
                 return true;
@@ -77,7 +78,7 @@ namespace ISPSystem.Services
         {
             try
             {
-                using var conn = new MySqlConnection(_connectionString);
+                await using var conn = new MySqlConnection(_connectionString);
                 await conn.OpenAsync();
                 await Exec(conn, "DELETE FROM radcheck WHERE username=@u AND attribute='Auth-Type'", ("@u", username));
                 await Exec(conn,
@@ -96,7 +97,7 @@ namespace ISPSystem.Services
         {
             try
             {
-                using var conn = new MySqlConnection(_connectionString);
+                await using var conn = new MySqlConnection(_connectionString);
                 await conn.OpenAsync();
                 var rate = NormalizeSpeed(speed);
                 await Exec(conn, "DELETE FROM radreply WHERE username=@u AND attribute='Mikrotik-Rate-Limit'", ("@u", username));
@@ -105,14 +106,18 @@ namespace ISPSystem.Services
                     ("@u", username), ("@s", rate));
                 return true;
             }
-            catch { return false; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "RADIUS UpdateSpeed failed: {User}", username);
+                return false;
+            }
         }
 
         public async Task<bool> UpdateExpiration(string username, DateTime expiration)
         {
             try
             {
-                using var conn = new MySqlConnection(_connectionString);
+                await using var conn = new MySqlConnection(_connectionString);
                 await conn.OpenAsync();
                 await Exec(conn, "DELETE FROM radcheck WHERE username=@u AND attribute='Expiration'", ("@u", username));
                 var exp = expiration.ToString("dd MMM yyyy HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
@@ -121,19 +126,27 @@ namespace ISPSystem.Services
                     ("@u", username), ("@e", exp));
                 return true;
             }
-            catch { return false; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "RADIUS UpdateExpiration failed: {User}", username);
+                return false;
+            }
         }
 
         public async Task<bool> DeleteUser(string username)
         {
             try
             {
-                using var conn = new MySqlConnection(_connectionString);
+                await using var conn = new MySqlConnection(_connectionString);
                 await conn.OpenAsync();
                 await DeleteUserInternal(conn, username);
                 return true;
             }
-            catch { return false; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "RADIUS DeleteUser failed: {User}", username);
+                return false;
+            }
         }
 
         private async Task DeleteUserInternal(MySqlConnection conn, string username)
@@ -145,8 +158,9 @@ namespace ISPSystem.Services
 
         private async Task Exec(MySqlConnection conn, string sql, params (string n, object v)[] ps)
         {
-            using var cmd = new MySqlCommand(sql, conn);
-            foreach (var p in ps) cmd.Parameters.AddWithValue(p.n, p.v ?? DBNull.Value);
+            await using var cmd = new MySqlCommand(sql, conn);
+            foreach (var p in ps)
+                cmd.Parameters.AddWithValue(p.n, p.v ?? DBNull.Value);
             await cmd.ExecuteNonQueryAsync();
         }
 

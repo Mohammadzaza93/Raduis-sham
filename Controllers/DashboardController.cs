@@ -28,139 +28,144 @@ namespace ISPSystem.Controllers
         [HttpGet]
         public async Task<IActionResult> GetDashboard()
         {
-            // 🌍 توحيد التوقيت الحالي لضمان عدم حدوث تضارب فوارق الساعات في السيرفر والحاويات
-            var now = DateTime.Now;
-            var today = now.Date;
-            var threeDaysFromNow = today.AddDays(3);
-
-            // 📡 1. جلب بيانات ميكروتيك بشكل منفصل ومحمي لتجنب تعليق اللوحة عند سقوط الاتصال بالراوتر
-            var onlineClients = 0;
             try
             {
-                var online = await _mikroTik.GetActiveUsers();
-                onlineClients = online?.Count ?? 0;
+                var now = DateTime.Now;
+                var today = now.Date;
+                var threeDaysFromNow = today.AddDays(3);
+
+                // 1. MikroTik (محمي)
+                var onlineClients = 0;
+                try
+                {
+                    var online = await _mikroTik.GetActiveUsers();
+                    onlineClients = online?.Count ?? 0;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"MikroTik Connection Error: {ex.Message}");
+                }
+
+                // 2. إحصائيات العملاء
+                var totalClients = await _context.Clients.CountAsync();
+
+                var activeClients = await _context.Subscriptions
+                    .Where(s => s.IsActive && s.EndDate > now)
+                    .Select(s => s.ClientId)
+                    .Distinct()
+                    .CountAsync();
+
+                var expiringToday = await _context.Subscriptions
+                    .CountAsync(s => s.IsActive && s.EndDate.Date == today);
+
+                var expiringSoon = await _context.Subscriptions
+                    .CountAsync(s => s.IsActive && s.EndDate > now && s.EndDate <= threeDaysFromNow);
+
+                var expiredClients = await _context.Subscriptions
+                    .CountAsync(s => !s.IsActive && s.EndDate < now);
+
+                // 3. الباقات
+                var plansStats = await _context.Plans
+                    .Select(p => new PlanStatDto
+                    {
+                        Name = p.Name,
+                        Count = p.Subscriptions.Count(s => s.IsActive)
+                    })
+                    .Where(x => x.Count > 0)
+                    .ToListAsync();
+
+                // 4. المالية
+                var todayRevenue = await _context.Payments
+                    .Where(p => p.Status == "Completed" && p.Date.Date == today)
+                    .SumAsync(p => (decimal?)p.Amount) ?? 0;
+
+                var monthRevenue = await _context.Payments
+                    .Where(p => p.Status == "Completed" && p.Date.Month == now.Month && p.Date.Year == now.Year)
+                    .SumAsync(p => (decimal?)p.Amount) ?? 0;
+
+                var monthExpenses = await _context.Expenses
+                    .Where(e => e.Date.Month == now.Month && e.Date.Year == now.Year)
+                    .SumAsync(e => (decimal?)e.Amount) ?? 0;
+
+                // 5. الفواتير
+                var pendingInvoices = await _context.Invoices
+                    .CountAsync(i => !i.IsPaid && i.DueDate >= now);
+
+                var overdueInvoices = await _context.Invoices
+                    .CountAsync(i => !i.IsPaid && i.DueDate < now);
+
+                var overdueAmount = await _context.Invoices
+                    .Where(i => !i.IsPaid && i.DueDate < now)
+                    .SumAsync(i => (decimal?)i.Total) ?? 0;
+
+                // 6. قوائم
+                var expiredList = await _context.Subscriptions
+                    .Include(s => s.Client)
+                    .Include(s => s.Plan)
+                    .Where(s => !s.IsActive && s.EndDate < now)
+                    .OrderByDescending(s => s.EndDate)
+                    .Take(5)
+                    .Select(s => new ExpiredClientDto
+                    {
+                        FullName = s.Client != null ? s.Client.FullName : "",
+                        Username = s.Client != null ? s.Client.Username : "",
+                        Phone = s.Client != null ? s.Client.Phone : "",
+                        PlanName = s.Plan != null ? s.Plan.Name : "",
+                        EndDate = s.EndDate
+                    })
+                    .ToListAsync();
+
+                var expiringList = await _context.Subscriptions
+                    .Include(s => s.Client)
+                    .Include(s => s.Plan)
+                    .Where(s => s.IsActive && s.EndDate > now && s.EndDate <= threeDaysFromNow)
+                    .OrderBy(s => s.EndDate)
+                    .Take(5)
+                    .Select(s => new ExpiringClientDto
+                    {
+                        FullName = s.Client != null ? s.Client.FullName : "",
+                        Username = s.Client != null ? s.Client.Username : "",
+                        Phone = s.Client != null ? s.Client.Phone : "",
+                        PlanName = s.Plan != null ? s.Plan.Name : "",
+                        EndDate = s.EndDate,
+                        DaysRemaining = (s.EndDate - now).Days
+                    })
+                    .ToListAsync();
+
+                return Ok(ApiResponse<object>.Ok(new
+                {
+                    clients = new
+                    {
+                        total = totalClients,
+                        active = activeClients,
+                        online = onlineClients,
+                        expiringToday,
+                        expiringSoon,
+                        expired = expiredClients
+                    },
+                    plans = plansStats,
+                    financial = new
+                    {
+                        todayRevenue,
+                        monthRevenue,
+                        monthExpenses,
+                        monthProfit = monthRevenue - monthExpenses,
+                        pendingInvoices,
+                        overdueInvoices,
+                        overdueAmount
+                    },
+                    recent = new
+                    {
+                        expiredClientsList = expiredList,
+                        expiringSoonList = expiringList
+                    }
+                }));
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"MikroTik Connection Error: {ex.Message}");
+                Console.WriteLine($"Dashboard Error: {ex.Message}");
+                return StatusCode(500, ApiResponse<string>.Fail($"Dashboard error: {ex.Message}"));
             }
-
-            // 👥 2. استعلام مجمع وعالي الكفاءة لإحصائيات العملاء (Single Database Roundtrip)
-            var totalClients = await _context.Clients.CountAsync(c => c.Role == "Client");
-
-            var subscriptionsStats = await _context.Subscriptions
-                .Where(s => (s.IsActive && s.EndDate > now) || (s.IsActive && s.EndDate.Date == today) || (!s.IsActive && s.EndDate < now))
-                .Select(s => new
-                {
-                    s.ClientId,
-                    IsActive = s.IsActive,
-                    IsExpiringToday = s.IsActive && s.EndDate.Date == today,
-                    IsExpiringSoon = s.IsActive && s.EndDate > now && s.EndDate <= threeDaysFromNow,
-                    IsExpired = !s.IsActive && s.EndDate < now
-                })
-                .ToListAsync();
-
-            var activeClients = subscriptionsStats.Where(x => x.IsActive).Select(x => x.ClientId).Distinct().Count();
-            var expiringToday = subscriptionsStats.Count(x => x.IsExpiringToday);
-            var expiringSoon = subscriptionsStats.Count(x => x.IsExpiringSoon);
-            var expiredClients = subscriptionsStats.Count(x => x.IsExpired);
-
-            // 📊 3. إحصائيات الباقات النشطة فقط
-            var plansStats = await _context.Plans
-                .Select(p => new PlanStatDto
-                {
-                    Name = p.Name,
-                    Count = p.Subscriptions.Count(s => s.IsActive)
-                })
-                .Where(x => x.Count > 0)
-                .ToListAsync();
-
-            // 💰 4. تحسين الاستعلامات المالية بدمج فواتير الدفع والمصروفات
-            var payments = await _context.Payments
-                .Where(p => p.Status == "Completed" && (p.Date.Date == today || (p.Date.Month == now.Month && p.Date.Year == now.Year)))
-                .Select(p => new { p.Amount, p.Date })
-                .ToListAsync();
-
-            var todayRevenue = payments.Where(p => p.Date.Date == today).Sum(p => p.Amount);
-            var monthRevenue = payments.Sum(p => p.Amount);
-
-            var monthExpenses = await _context.Expenses
-                .Where(e => e.Date.Month == now.Month && e.Date.Year == now.Year)
-                .SumAsync(e => e.Amount);
-
-            // 🧾 5. حساب إحصائيات الفواتير المستحقة والمتأخرة باستعلام واحد مجمع
-            var invoicesStats = await _context.Invoices
-                .Where(i => !i.IsPaid)
-                .Select(i => new { i.Total, IsOverdue = i.DueDate < now })
-                .ToListAsync();
-
-            var pendingInvoices = invoicesStats.Count(i => !i.IsOverdue);
-            var overdueInvoices = invoicesStats.Count(i => i.IsOverdue);
-            var overdueAmount = invoicesStats.Where(i => i.IsOverdue).Sum(i => i.Total);
-
-            // ❌ 6. جلب آخر 5 عملاء انتهى اشتراكهم
-            var expiredList = await _context.Subscriptions
-                .Include(s => s.Client)
-                .Include(s => s.Plan)
-                .Where(s => !s.IsActive && s.EndDate < now)
-                .OrderByDescending(s => s.EndDate)
-                .Take(5)
-                .Select(s => new ExpiredClientDto
-                {
-                    FullName = s.Client.FullName,
-                    Username = s.Client.Username,
-                    Phone = s.Client.Phone,
-                    PlanName = s.Plan.Name,
-                    EndDate = s.EndDate
-                })
-                .ToListAsync();
-
-            // ⚠️ 7. جلب العملاء الذين سينتهي اشتراكهم قريباً
-            var expiringList = await _context.Subscriptions
-                .Include(s => s.Client)
-                .Include(s => s.Plan)
-                .Where(s => s.IsActive && s.EndDate > now && s.EndDate <= threeDaysFromNow)
-                .OrderBy(s => s.EndDate)
-                .Take(5)
-                .Select(s => new ExpiringClientDto
-                {
-                    FullName = s.Client.FullName,
-                    Username = s.Client.Username,
-                    Phone = s.Client.Phone,
-                    PlanName = s.Plan.Name,
-                    EndDate = s.EndDate,
-                    DaysRemaining = (s.EndDate - now).Days
-                })
-                .ToListAsync();
-
-            return Ok(ApiResponse<object>.Ok(new
-            {
-                clients = new
-                {
-                    total = totalClients,
-                    active = activeClients,
-                    online = onlineClients,
-                    expiringToday,
-                    expiringSoon,
-                    expired = expiredClients
-                },
-                plans = plansStats,
-                financial = new
-                {
-                    todayRevenue,
-                    monthRevenue,
-                    monthExpenses,
-                    monthProfit = monthRevenue - monthExpenses,
-                    pendingInvoices,
-                    overdueInvoices,
-                    overdueAmount
-                },
-                recent = new
-                {
-                    expiredClientsList = expiredList,
-                    expiringSoonList = expiringList
-                }
-            }));
         }
 
         // 📈 الحصول على الإحصائيات العامة والنسب المئوية للتحويل المالي
