@@ -65,7 +65,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:5000
-      - ConnectionStrings__DefaultConnection=Server=mysql;Database=isp_system;User=root;Password=RootP@ssw0rd2026!
+      - ConnectionStrings__DefaultConnection=Server=mysql;Port=3306;Database=isp_system;User=root;Password=RootP@ssw0rd2026!
       - ConnectionStrings__RadiusConnection=Server=mysql;Port=3306;Database=isp_system;User=root;Password=RootP@ssw0rd2026!
       - Redis__ConnectionString=redis:6379
       - RadiusServer__Host=isp_radius
