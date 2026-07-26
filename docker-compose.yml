@@ -49,6 +49,10 @@ services:
     restart: unless-stopped
 
   backend:
+      extra_hosts:
+      - "mikrotik:20.20.20.1"
+    environment:
+      - MikroTik__Ip=20.20.20.1
     build:
       context: .
       dockerfile: Dockerfile
