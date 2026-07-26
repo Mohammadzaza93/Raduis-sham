@@ -2,9 +2,9 @@ using System;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.EntityFrameworkCore;
 using ISPSystem.Data;
 using Microsoft.Extensions.Logging;
-using Microsoft.EntityFrameworkCore;
 
 namespace ISPSystem
 {
@@ -20,12 +20,16 @@ namespace ISPSystem
                 try
                 {
                     var context = services.GetRequiredService<AppDbContext>();
-                    // Â–« «·”ÿ— ÌﬁÊ„ »≈‰‘«¡ «·Ãœ«Ê· »‰«¡ ⁄·Ï «·‹ Models «·Œ«’… »ﬂ
-                    context.Database.Migrate();
+
+                    // ≈‰‘«¡ «·Ãœ«Ê· ≈–« „« ﬂ«‰  „ÊÃÊœ…
+                    context.Database.EnsureCreated();
+
+                    // ≈÷«›… «·»Ì«‰«  «·√Ê·Ì… (Admin + Plans)
+                    SeedData.Initialize(services);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("An error occurred while migrating the database: " + ex.Message);
+                    Console.WriteLine("Database error: " + ex.Message);
                 }
             }
 

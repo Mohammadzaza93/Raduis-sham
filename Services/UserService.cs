@@ -5,6 +5,7 @@ using ISPSystem.Data;
 using ISPSystem.Models;
 using ISPSystem.DTOs;
 using Microsoft.EntityFrameworkCore;
+using ISPSystem.Helpers;
 
 namespace ISPSystem.Services
 {
@@ -318,7 +319,7 @@ namespace ISPSystem.Services
                     bool mikrotikResult = await _mikroTik.AddPppUser(
                         client.Username,
                         plainPassword,
-                        plan.Speed,
+                        plan.Name,
                         client.FullName
                     );
 

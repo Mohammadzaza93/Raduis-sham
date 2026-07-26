@@ -53,9 +53,9 @@ using Microsoft.AspNetCore.Http;
                 Response.Cookies.Append("token", token, new CookieOptions
                 {
                     HttpOnly = true,
-                    Secure = true,
-                    SameSite = SameSiteMode.Strict,
-                    Expires = DateTime.UtcNow.AddHours(5)
+                    Secure = false,                    // ← غيّرها لـ false للتطوير
+                    SameSite = SameSiteMode.Lax,       // ← غيّرها لـ Lax
+                    Expires = DateTime.UtcNow.AddHours(8)
                 });
 
                 // ⚠️ تعديل: إرجاع الرد بصيغةApiResponse الموحدة حتى لا تنهار واجهة الإدارة
