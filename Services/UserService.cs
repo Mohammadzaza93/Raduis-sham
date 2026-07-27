@@ -182,6 +182,7 @@ namespace ISPSystem.Services
 
         // ========== 🔥 الطريقة الرئيسية: إنشاء عميل مع إضافته إلى MikroTik و Radius ==========
         // ========== 🔥 إنشاء عميل مع RADIUS كمسؤول رئيسي ==========
+        // ========== 🔥 إنشاء عميل مع RADIUS كمسؤول رئيسي فقط ==========
         public async Task<Client> CreateClient(CreateClientDto dto)
         {
             if (string.IsNullOrEmpty(dto.NationalId))
@@ -284,7 +285,7 @@ namespace ISPSystem.Services
                 await transaction.CommitAsync();
                 await _audit.Log("Create", "Client", client.Id);
 
-                // ========== 🟢 RADIUS (المسؤول الرئيسي) ==========
+                // ========== 🟢 RADIUS فقط (المسؤول الرئيسي عن الاتصال والسرعة) ==========
                 try
                 {
                     string radiusSpeed = plan.Speed?
@@ -295,16 +296,15 @@ namespace ISPSystem.Services
                     if (!radiusSpeed.Contains("/"))
                         radiusSpeed = $"{radiusSpeed}/{radiusSpeed}";
 
-                    // إنشاء المستخدم في RADIUS مع تاريخ الانتهاء
                     bool radiusResult = await _radius.CreateUser(
                         client.Username,
                         plainPassword,
                         radiusSpeed,
-                        endDate   // ← تاريخ انتهاء الاشتراك
+                        endDate
                     );
 
                     if (radiusResult)
-                        Console.WriteLine($"✅ RADIUS: تم إنشاء {client.Username} بنجاح (ينتهي: {endDate:yyyy-MM-dd})");
+                        Console.WriteLine($"✅ RADIUS: تم إنشاء {client.Username} بنجاح (ينتهي: {endDate:yyyy-MM-dd}) - السرعة: {radiusSpeed}");
                     else
                         Console.WriteLine($"⚠️ RADIUS: فشل إنشاء {client.Username}");
                 }
@@ -313,27 +313,11 @@ namespace ISPSystem.Services
                     Console.WriteLine($"❌ خطأ RADIUS: {ex.Message}");
                 }
 
-                // ========== 🟡 MikroTik (اختياري - Dual Write) ==========
-                try
-                {
-                    bool mikrotikResult = await _mikroTik.AddPppUser(
-                        client.Username,
-                        plainPassword,
-                        plan.Name,
-                        client.FullName
-                    );
+                // ملاحظة مهمة:
+                // تم إزالة إضافة المستخدم إلى MikroTik /ppp/secret عمداً
+                // المايكروتيك يجب أن يعتمد على RADIUS فقط (use-radius=yes)
 
-                    if (mikrotikResult)
-                        Console.WriteLine($"✅ MikroTik: تم إضافة {client.Username}");
-                    else
-                        Console.WriteLine($"⚠️ MikroTik: فشل إضافة {client.Username}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"❌ خطأ MikroTik: {ex.Message}");
-                }
-
-                // إرجاع كلمة المرور العادية (مرة واحدة)
+                // إرجاع كلمة المرور العادية (مرة واحدة فقط)
                 client.Password = plainPassword;
                 return client;
             }
