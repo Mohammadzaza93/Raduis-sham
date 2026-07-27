@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Threading.Tasks;
+using ISPSystem.Models;
 
 namespace ISPSystem.Services
 {
@@ -170,6 +171,97 @@ namespace ISPSystem.Services
             speed = speed.Replace("Mb/s", "M").Replace("Mbps", "M").Trim();
             if (!speed.Contains("/")) speed = $"{speed}/{speed}";
             return speed;
+        }
+        // ========== هل العميل متصل الآن؟ (من radacct) ==========
+        public async Task<bool> IsUserOnline(string username)
+        {
+            try
+            {
+                await using var conn = new MySqlConnection(_connectionString);
+                await conn.OpenAsync();
+
+                await using var cmd = new MySqlCommand(
+                    @"SELECT COUNT(*) FROM radacct 
+              WHERE username = @u AND acctstoptime IS NULL",
+                    conn);
+                cmd.Parameters.AddWithValue("@u", username);
+
+                var count = Convert.ToInt32(await cmd.ExecuteScalarAsync());
+                return count > 0;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "IsUserOnline failed: {User}", username);
+                return false;
+            }
+        }
+
+        // ========== جلب كل المستخدمين المتصلين حالياً ==========
+        public async Task<Dictionary<string, OnlineSessionInfo>> GetOnlineUsers()
+        {
+            var result = new Dictionary<string, OnlineSessionInfo>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                await using var conn = new MySqlConnection(_connectionString);
+                await conn.OpenAsync();
+
+                await using var cmd = new MySqlCommand(
+                    @"SELECT username, framedipaddress, callingstationid, 
+                     acctstarttime, nasipaddress, acctsessionid
+              FROM radacct 
+              WHERE acctstoptime IS NULL
+              ORDER BY acctstarttime DESC",
+                    conn);
+
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var user = reader.GetString(0);
+                    if (!result.ContainsKey(user))
+                    {
+                        result[user] = new OnlineSessionInfo
+                        {
+                            Username = user,
+                            FramedIp = reader.IsDBNull(1) ? null : reader.GetString(1),
+                            MacAddress = reader.IsDBNull(2) ? null : reader.GetString(2),
+                            StartTime = reader.IsDBNull(3) ? null : reader.GetDateTime(3),
+                            NasIp = reader.IsDBNull(4) ? null : reader.GetString(4),
+                            SessionId = reader.IsDBNull(5) ? null : reader.GetString(5)
+                        };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetOnlineUsers failed");
+            }
+            return result;
+        }
+
+        // ========== فصل الجلسة (CoA / Disconnect) عبر حذف من radacct + Reject ==========
+        public async Task<bool> DisconnectUser(string username)
+        {
+            try
+            {
+                await using var conn = new MySqlConnection(_connectionString);
+                await conn.OpenAsync();
+
+                // إغلاق الجلسات المفتوحة في المحاسبة
+                await Exec(conn,
+                    @"UPDATE radacct SET acctstoptime = NOW(), 
+              acctterminatecause = 'Admin-Reset'
+              WHERE username = @u AND acctstoptime IS NULL",
+                    ("@u", username));
+
+                // رفض أي مصادقة جديدة
+                await DisableUser(username);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "DisconnectUser failed: {User}", username);
+                return false;
+            }
         }
     }
 }

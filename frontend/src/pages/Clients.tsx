@@ -76,6 +76,10 @@ interface Client {
     macAddress: string;
     ipAddress: string;
     address?: string;
+    isOnline?: boolean;
+    onlineIp?: string;
+    onlineMac?: string;
+    onlineSince?: string;
     activeSubscription?: Subscription;
 }
 
@@ -455,6 +459,7 @@ export default function Clients() {
                             <TableCell>تاريخ الانتهاء</TableCell>
                             <TableCell>الحالة</TableCell>
                             <TableCell align="center">الإجراءات</TableCell>
+                            <TableCell>الحالة الشبكية</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
@@ -535,6 +540,18 @@ export default function Clients() {
                                                     >
                                                         <MoreVertIcon />
                                                     </IconButton>
+                                                </TableCell>
+                                                <TableCell>
+                                                    {client.isOnline ? (
+                                                        <Chip
+                                                            label="متصل"
+                                                            color="success"
+                                                            size="small"
+                                                            title={client.onlineIp ? `IP: ${client.onlineIp}` : ''}
+                                                        />
+                                                    ) : (
+                                                            <Chip label="غير متصل" color="default" size="small" />
+                                                        )}
                                                 </TableCell>
                                             </TableRow>
                                         );

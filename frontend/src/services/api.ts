@@ -2,11 +2,10 @@
 
 // 🔥 استخدم المسار النسبي وليس المسار الكامل
 const api = axios.create({
-    baseURL: '/api',  // ← هذا مهم جداً! وليس https://localhost:5001/api
+    baseURL: 'http://localhost:5000/api',  // للتطوير
+    // baseURL: '/api',                    // للإنتاج مع nginx
     timeout: 60000,
-    headers: {
-        'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
 });
 
 api.interceptors.request.use((config) => {

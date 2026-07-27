@@ -311,7 +311,34 @@ namespace ISPSystem.Services
                 catch (Exception ex)
                 {
                     Console.WriteLine($"❌ RADIUS ERROR: {ex.Message}");
+                }// ========== 🟢 RADIUS فقط (المسؤول الوحيد) ==========
+                try
+                {
+                    string radiusSpeed = plan.Speed?
+                        .Replace("Mb/s", "M")
+                        .Replace("Mbps", "M")
+                        .Trim() ?? "1M/1M";
+
+                    if (!radiusSpeed.Contains("/"))
+                        radiusSpeed = $"{radiusSpeed}/{radiusSpeed}";
+
+                    bool radiusResult = await _radius.CreateUser(
+                        client.Username,
+                        plainPassword,
+                        radiusSpeed,
+                        endDate
+                    );
+
+                    if (!radiusResult)
+                        Console.WriteLine($"⚠️ RADIUS: فشل إنشاء {client.Username}");
                 }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"❌ خطأ RADIUS: {ex.Message}");
+                }
+
+                // ❌ لا تضف المستخدم محلياً في MikroTik
+                // MikroTik يجب أن يكون مضبوطاً على RADIUS Authentication فقط
                 // ========== MikroTik Secrets (مؤقت) ==========
                 try
                 {

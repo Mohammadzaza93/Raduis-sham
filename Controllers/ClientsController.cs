@@ -57,21 +57,44 @@ namespace ISPSystem.Controllers
                     c.Username.Contains(search) ||
                     c.FullName.Contains(search) ||
                     c.Phone.Contains(search) ||
-                    c.NationalId.Contains(search));
+                    (c.NationalId != null && c.NationalId.Contains(search)));
             }
 
             if (!string.IsNullOrEmpty(query.Status))
-            {
                 clientsQuery = clientsQuery.Where(c => c.Status == query.Status);
-            }
 
             var total = await clientsQuery.CountAsync();
 
-            var data = await clientsQuery
+            // جلب العملاء أولاً
+            var clients = await clientsQuery
                 .OrderByDescending(c => c.CreatedAt)
                 .Skip((query.Page - 1) * query.PageSize)
                 .Take(query.PageSize)
-                .Select(c => new
+                .ToListAsync();
+
+            var clientIds = clients.Select(c => c.Id).ToList();
+
+            // الاشتراكات النشطة مع الباقة
+            var activeSubs = await _context.Subscriptions
+                .Include(s => s.Plan)
+                .Where(s => clientIds.Contains(s.ClientId) && s.IsActive)
+                .GroupBy(s => s.ClientId)
+                .Select(g => g.OrderByDescending(s => s.EndDate).FirstOrDefault())
+                .ToListAsync();
+
+            var subDict = activeSubs
+                .Where(s => s != null)
+                .ToDictionary(s => s.ClientId);
+
+            // حالة الاتصال من RADIUS (radacct)
+            var onlineUsers = await _radius.GetOnlineUsers();
+
+            var data = clients.Select(c =>
+            {
+                subDict.TryGetValue(c.Id, out var sub);
+                onlineUsers.TryGetValue(c.Username, out var session);
+
+                return new
                 {
                     c.Id,
                     c.Username,
@@ -83,21 +106,22 @@ namespace ISPSystem.Controllers
                     c.Status,
                     c.CreatedAt,
                     c.NationalId,
-                    ActiveSubscription = _context.Subscriptions
-                        .Where(s => s.ClientId == c.Id && s.IsActive)
-                        .OrderByDescending(s => s.EndDate)
-                        .Select(s => new
-                        {
-                            s.Id,
-                            PlanName = s.Plan != null ? s.Plan.Name : "باقة غير معروفة",
-                            PlanSpeed = s.Plan != null ? s.Plan.Speed : null,
-                            s.EndDate,
-                            s.IsActive,
-                            DaysRemaining = (s.EndDate - DateTime.Now).Days
-                        })
-                        .FirstOrDefault()
-                })
-                .ToListAsync();
+                    c.Address,
+                    IsOnline = session != null,
+                    OnlineIp = session?.FramedIp,
+                    OnlineMac = session?.MacAddress,
+                    OnlineSince = session?.StartTime,
+                    ActiveSubscription = sub == null ? null : new
+                    {
+                        sub.Id,
+                        PlanName = sub.Plan?.Name ?? "باقة غير معروفة",
+                        PlanSpeed = sub.Plan?.Speed,
+                        sub.EndDate,
+                        sub.IsActive,
+                        DaysRemaining = (sub.EndDate - DateTime.Now).Days
+                    }
+                };
+            }).ToList();
 
             return Ok(ApiResponse<object>.Ok(new
             {
