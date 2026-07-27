@@ -20,7 +20,18 @@ services:
       retries: 5
     restart: unless-stopped
 
-    radius:
+  redis:
+    image: redis:7-alpine
+    container_name: isp_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - isp_network
+    restart: unless-stopped
+
+  radius:
     build:
       context: ./radius
       dockerfile: Dockerfile
@@ -32,23 +43,6 @@ services:
       - isp_network
     depends_on:
       - mysql
-    restart: unless-stopped
-
-  radius:
-    image: freeradius/freeradius-server:latest
-    container_name: isp_radius
-    ports:
-      - "1812:1812/udp"
-      - "1813:1813/udp"
-    networks:
-      - isp_network
-    restart: unless-stopped
-
-  mikrotik:
-    image: alpine:latest
-    container_name: isp_mikrotik
-    command: sleep infinity
-    network_mode: "host"
     restart: unless-stopped
 
   backend:
@@ -74,19 +68,16 @@ services:
       - RadiusServer__Host=isp_radius
       - RadiusServer__Port=1812
       - RadiusServer__Secret=testing123
-      - MikroTik__Ip=192.168.88.1
+      - Jwt__Key=SuperSecureSecretKeyForISPSystem2026WithMoreThan256BitsOfLength!
+      - Jwt__Issuer=ISPSystem
+      - Jwt__Audience=ISPSystemFrontend
+      - Logging__LogLevel__Default=Debug
+      - Logging__LogLevel__Microsoft.AspNetCore=Information
+      - MikroTik__Ip=20.20.20.1
       - MikroTik__User=admin
       - MikroTik__Pass=sham@#$
       - MikroTik__ApiPort=8728
       - MikroTik__Enabled=true
-      # 1. Force a securely sized JWT Key to prevent crypto signing crashes
-      - Jwt__Key=SuperSecureSecretKeyForISPSystem2026WithMoreThan256BitsOfLength!
-      - Jwt__Issuer=ISPSystem
-      - Jwt__Audience=ISPSystemFrontend
-      # 2. Turn up log verbosity to expose hidden database or framework issues
-      - Logging__LogLevel__Default=Debug
-      - Logging__LogLevel__Microsoft.AspNetCore=Information
-  
     volumes:
       - dataprotection_keys:/root/.aspnet/DataProtection-Keys
     networks:
