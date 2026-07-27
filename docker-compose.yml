@@ -71,6 +71,11 @@ services:
       - RadiusServer__Host=isp_radius
       - RadiusServer__Port=1812
       - RadiusServer__Secret=testing123
+      - MikroTik__Ip=192.168.88.1
+      - MikroTik__User=admin
+      - MikroTik__Pass=sham@#$
+      - MikroTik__ApiPort=8728
+      - MikroTik__Enabled=true
       # 1. Force a securely sized JWT Key to prevent crypto signing crashes
       - Jwt__Key=SuperSecureSecretKeyForISPSystem2026WithMoreThan256BitsOfLength!
       - Jwt__Issuer=ISPSystem
