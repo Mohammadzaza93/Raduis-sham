@@ -286,6 +286,7 @@ namespace ISPSystem.Services
                 await _audit.Log("Create", "Client", client.Id);
 
                 // ========== 🟢 RADIUS فقط (المسؤول الرئيسي عن الاتصال والسرعة) ==========
+                // ========== RADIUS ==========
                 try
                 {
                     string radiusSpeed = plan.Speed?
@@ -303,16 +304,32 @@ namespace ISPSystem.Services
                         endDate
                     );
 
-                    if (radiusResult)
-                        Console.WriteLine($"✅ RADIUS: تم إنشاء {client.Username} بنجاح (ينتهي: {endDate:yyyy-MM-dd}) - السرعة: {radiusSpeed}");
-                    else
-                        Console.WriteLine($"⚠️ RADIUS: فشل إنشاء {client.Username}");
+                    Console.WriteLine(radiusResult
+                        ? $"✅ RADIUS OK: {client.Username}"
+                        : $"⚠️ RADIUS FAILED: {client.Username}");
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"❌ خطأ RADIUS: {ex.Message}");
+                    Console.WriteLine($"❌ RADIUS ERROR: {ex.Message}");
                 }
+                // ========== MikroTik Secrets (مؤقت) ==========
+                try
+                {
+                    bool mtResult = await _mikroTik.AddPppUser(
+                        client.Username,
+                        plainPassword,
+                        plan.Name,          // لازم يكون فيه Profile بنفس اسم الباقة على المايكروتيك
+                        client.FullName
+                    );
 
+                    Console.WriteLine(mtResult
+                        ? $"✅ MikroTik OK: {client.Username}"
+                        : $"⚠️ MikroTik FAILED: {client.Username}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"❌ MikroTik ERROR: {ex.Message}");
+                }
                 // ملاحظة مهمة:
                 // تم إزالة إضافة المستخدم إلى MikroTik /ppp/secret عمداً
                 // المايكروتيك يجب أن يعتمد على RADIUS فقط (use-radius=yes)

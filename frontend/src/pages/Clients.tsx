@@ -121,16 +121,37 @@ export default function Clients() {
 
     const fetchClients = async () => {
         setLoading(true);
+        setError('');
         try {
             const response = await api.get('/clients', {
                 params: { page: page + 1, pageSize: rowsPerPage, search },
             });
-            if (response.data.success) {
-                setClients(response.data.data.data);
-                setTotal(response.data.data.total);
+
+            // يدعم success أو Success
+            const body = response.data;
+            const ok = body?.success === true || body?.Success === true;
+            const payload = body?.data ?? body?.Data;
+
+            if (ok && payload) {
+                const list = payload.data ?? payload.Data ?? [];
+                const totalCount = payload.total ?? payload.Total ?? 0;
+                setClients(Array.isArray(list) ? list : []);
+                setTotal(totalCount);
+            } else {
+                setClients([]);
+                setTotal(0);
+                setError(body?.message || body?.Message || 'فشل تحميل العملاء');
             }
-        } catch (err) {
-            console.error(err);
+        } catch (err: any) {
+            console.error('fetchClients error:', err);
+            setClients([]);
+            setTotal(0);
+            setError(
+                err.response?.data?.message ||
+                err.response?.data?.Message ||
+                err.message ||
+                'خطأ في الاتصال بالخادم'
+            );
         } finally {
             setLoading(false);
         }
