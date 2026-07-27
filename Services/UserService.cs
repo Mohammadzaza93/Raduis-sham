@@ -312,6 +312,7 @@ namespace ISPSystem.Services
                 {
                     Console.WriteLine($"❌ RADIUS ERROR: {ex.Message}");
                 }// ========== 🟢 RADIUS فقط (المسؤول الوحيد) ==========
+                 // ========== 🟢 RADIUS فقط (المسؤول الرئيسي عن الاتصال والسرعة) ==========
                 try
                 {
                     string radiusSpeed = plan.Speed?
@@ -329,37 +330,22 @@ namespace ISPSystem.Services
                         endDate
                     );
 
-                    if (!radiusResult)
-                        Console.WriteLine($"⚠️ RADIUS: فشل إنشاء {client.Username}");
+                    Console.WriteLine(radiusResult
+                        ? $"✅ RADIUS OK: {client.Username}"
+                        : $"⚠️ RADIUS FAILED: {client.Username}");
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"❌ خطأ RADIUS: {ex.Message}");
+                    Console.WriteLine($"❌ RADIUS ERROR: {ex.Message}");
                 }
+
+                // ========== تم حذف إضافة MikroTik PPP Secret عمداً ==========
+                // المايكروتيك يجب أن يعتمد على RADIUS فقط (use-radius=yes)
 
                 // ❌ لا تضف المستخدم محلياً في MikroTik
                 // MikroTik يجب أن يكون مضبوطاً على RADIUS Authentication فقط
                 // ========== MikroTik Secrets (مؤقت) ==========
-                try
-                {
-                    bool mtResult = await _mikroTik.AddPppUser(
-                        client.Username,
-                        plainPassword,
-                        plan.Name,          // لازم يكون فيه Profile بنفس اسم الباقة على المايكروتيك
-                        client.FullName
-                    );
 
-                    Console.WriteLine(mtResult
-                        ? $"✅ MikroTik OK: {client.Username}"
-                        : $"⚠️ MikroTik FAILED: {client.Username}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"❌ MikroTik ERROR: {ex.Message}");
-                }
-                // ملاحظة مهمة:
-                // تم إزالة إضافة المستخدم إلى MikroTik /ppp/secret عمداً
-                // المايكروتيك يجب أن يعتمد على RADIUS فقط (use-radius=yes)
 
                 // إرجاع كلمة المرور العادية (مرة واحدة فقط)
                 client.Password = plainPassword;
