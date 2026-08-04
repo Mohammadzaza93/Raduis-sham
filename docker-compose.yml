@@ -99,7 +99,7 @@ services:
 
       RadiusServer__Host: isp_radius
       RadiusServer__Port: 1812
-      RadiusServer__Secret: testing123
+      RadiusServer__Secret: Sham@mm@r!1993#Riad#1991
 
       Jwt__Key: SuperSecureSecretKeyForISPSystem2026WithMoreThan256BitsOfLength!
       Jwt__Issuer: ISPSystem
