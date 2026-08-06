@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace ISPSystem.Models
 {
@@ -14,5 +14,13 @@ namespace ISPSystem.Models
         public string Notes { get; set; }
         public int? CreatedBy { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.Now;
+
+        /// <summary>صندوق الصرف — افتراضي صندوق المصاريف EXP</summary>
+        public int? CashBoxId { get; set; }
+        public CashBox CashBox { get; set; }
+
+        /// <summary>حساب من دليل التكاليف/المصروفات</summary>
+        public int? AccountId { get; set; }
+        public Account Account { get; set; }
     }
 }

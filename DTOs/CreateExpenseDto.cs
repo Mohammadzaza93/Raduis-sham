@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace ISPSystem.DTOs
 {
@@ -17,5 +17,10 @@ namespace ISPSystem.DTOs
 
         public string ReferenceNumber { get; set; }
         public string Notes { get; set; }
+
+        /// <summary>اختياري — إن لم يُحدد يُستخدم صندوق المصاريف EXP</summary>
+        public int? CashBoxId { get; set; }
+
+        public int? AccountId { get; set; }
     }
 }

@@ -1,11 +1,11 @@
-﻿using System;
+using System;
 
 namespace ISPSystem.Models
 {
     public class Payment
     {
         public int Id { get; set; }
-        public int ClientId { get; set; }  // بدلاً من UserId
+        public int ClientId { get; set; }
         public int? SubscriptionId { get; set; }
         public int? InvoiceId { get; set; }
         public decimal Amount { get; set; }
@@ -15,7 +15,10 @@ namespace ISPSystem.Models
         public string Notes { get; set; }
         public string Status { get; set; } = "Completed";
 
-        // Navigation properties
+        /// <summary>صندوق التحصيل — افتراضي صندوق التفعيلات ACT</summary>
+        public int? CashBoxId { get; set; }
+        public CashBox CashBox { get; set; }
+
         public Client Client { get; set; }
         public Subscription Subscription { get; set; }
         public Invoice Invoice { get; set; }

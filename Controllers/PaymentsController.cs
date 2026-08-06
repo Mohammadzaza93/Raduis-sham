@@ -1,21 +1,17 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
-using ISPSystem.Data;
 using ISPSystem.DTOs;
 using ISPSystem.Helpers;
-using ISPSystem.Models;
 using ISPSystem.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace ISPSystem.backend.Controllers
 {
     [ApiController]
     [Route("api/payments")]
-    [Authorize] // 🔐 تأمين عمليات الدفع والقيود المالية
+    [Authorize]
     public class PaymentsController : ControllerBase
     {
         private readonly PaymentService _service;
@@ -25,9 +21,18 @@ namespace ISPSystem.backend.Controllers
             _service = service;
         }
 
-        // 💳 معالجة عملية دفع جديدة (تسديد اشتراك أو فاتورة)
+        private int? UserId
+        {
+            get
+            {
+                var v = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                return int.TryParse(v, out var id) ? id : null;
+            }
+        }
+
+        /// <summary>تسجيل دفعة / تحصيل اشتراك → صندوق التفعيلات</summary>
         [HttpPost]
-        [Authorize(Roles = "Admin,Accountant")] // حصر تسجيل المدفوعات اليدوية على الإدارة والمحاسبين
+        [Authorize(Roles = "Admin,Accountant")]
         public async Task<IActionResult> Pay([FromBody] CreatePaymentDto dto)
         {
             if (dto == null)
@@ -35,9 +40,19 @@ namespace ISPSystem.backend.Controllers
 
             try
             {
-                // استدعاء خدمة الدفع لمعالجة الحركة المالية وتحديث حالة حساب العميل
-                var payment = await _service.Pay(dto.UserId, dto.Amount);
-                return Ok(ApiResponse<Payment>.Ok(payment));
+                // دعم التوافق: إن وُجد ClientId استخدمه
+                var clientId = dto.ClientId;
+                if (clientId <= 0)
+                    return BadRequest(ApiResponse<string>.Fail("يجب تحديد ClientId"));
+
+                var payment = await _service.Pay(
+                    clientId,
+                    dto.Amount,
+                    dto.CashBoxId,
+                    dto.Notes,
+                    UserId);
+
+                return Ok(ApiResponse<object>.Ok(payment, "تم تسجيل الدفعة"));
             }
             catch (Exception ex)
             {
@@ -45,7 +60,6 @@ namespace ISPSystem.backend.Controllers
             }
         }
 
-        // 📋 جلب كافة عمليات السداد والمدفوعات المسجلة في النظام
         [HttpGet]
         [Authorize(Roles = "Admin,Accountant")]
         public async Task<IActionResult> GetAll()
@@ -53,7 +67,7 @@ namespace ISPSystem.backend.Controllers
             try
             {
                 var payments = await _service.GetAll();
-                return Ok(ApiResponse<IEnumerable<Payment>>.Ok(payments));
+                return Ok(ApiResponse<object>.Ok(payments));
             }
             catch (Exception ex)
             {

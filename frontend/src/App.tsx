@@ -25,6 +25,12 @@ const ClientPortal = lazy(() => import('./pages/ClientPortal'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Settings = lazy(() => import('./pages/Settings'));
 const MikroTikDevices = lazy(() => import('./pages/MikroTikDevices'));
+const Accounts = lazy(() => import('./pages/Accounts'));
+const CashBoxes = lazy(() => import('./pages/CashBoxes'));
+const Materials = lazy(() => import('./pages/Materials'));
+const PurchaseInvoices = lazy(() => import('./pages/PurchaseInvoices'));
+const SalesInvoices = lazy(() => import('./pages/SalesInvoices'));
+const CashFlow = lazy(() => import('./pages/CashFlow'));
 const LoadingFallback = () => (
     <div className="flex items-center justify-center h-screen">
         <div className="relative">
@@ -75,6 +81,12 @@ function App() {
                                 <Route path="reports" element={<Suspense fallback={<LoadingFallback />}><Reports /></Suspense>} />
                                 <Route path="settings" element={<Suspense fallback={<LoadingFallback />}><Settings /></Suspense>} />
                                 <Route path="mikrotik-devices" element={<Suspense fallback={<LoadingFallback />}><MikroTikDevices /></Suspense>} />
+                                <Route path="accounts" element={<Suspense fallback={<LoadingFallback />}><Accounts /></Suspense>} />
+                                <Route path="cash-boxes" element={<Suspense fallback={<LoadingFallback />}><CashBoxes /></Suspense>} />
+                                <Route path="materials" element={<Suspense fallback={<LoadingFallback />}><Materials /></Suspense>} />
+                                <Route path="purchase-invoices" element={<Suspense fallback={<LoadingFallback />}><PurchaseInvoices /></Suspense>} />
+                                <Route path="sales-invoices" element={<Suspense fallback={<LoadingFallback />}><SalesInvoices /></Suspense>} />
+                                <Route path="cash-flow" element={<Suspense fallback={<LoadingFallback />}><CashFlow /></Suspense>} />
                             </Route>
                         </Routes>
                     </Router>

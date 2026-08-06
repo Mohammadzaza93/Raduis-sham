@@ -93,6 +93,14 @@ namespace ISPSystem
                 context.Plans.AddRange(plans);
                 Console.WriteLine("✅ Default plans created");
             }
+            if (!context.Plans.Any())
+            {
+                // ... الباقات ...
+                Console.WriteLine("✅ Default plans created");
+            }
+
+            // ========== شجرة الحسابات + الصناديق ==========
+            AccountingSeed.Seed(context);
 
             context.SaveChanges();
         }
