@@ -30,8 +30,8 @@ namespace ISPSystem.Services
                 {
                     p.Id,
                     p.ProductId,
-                    ProductName = p.ProductName ?? p.Product.Name,
-                    ModelNumber = p.ModelNumber ?? p.Product.ModelNumber,
+                    ProductName = p.ProductName ?? (p.Product != null ? p.Product.Name : ""),
+                    ModelNumber = p.ModelNumber ?? (p.Product != null ? p.Product.ModelNumber : null),
                     p.Quantity,
                     p.CostPerUnit,
                     p.Total,
@@ -48,10 +48,10 @@ namespace ISPSystem.Services
         public async Task<Purchase> Create(CreatePurchaseDto dto)
         {
             if (dto.Quantity <= 0)
-                throw new Exception("ÇáßãíÉ íÌÈ Ãä Êßæä ÃßÈÑ ãä ÕÝÑ");
+                throw new Exception("Ø§Ù„ÙƒÙ…ÙŠØ© ÙŠØ¬Ø¨ Ø£Ù† ØªÙƒÙˆÙ† Ø£ÙƒØ¨Ø± Ù…Ù† ØµÙØ±");
 
             if (dto.CostPerUnit < 0)
-                throw new Exception("ÓÚÑ ÇáæÍÏÉ ÛíÑ ÕÇáÍ");
+                throw new Exception("Ø³Ø¹Ø± Ø§Ù„ÙˆØ­Ø¯Ø© ØºÙŠØ± ØµØ§Ù„Ø­");
 
             Product product;
 
@@ -59,20 +59,20 @@ namespace ISPSystem.Services
             {
                 product = await _context.Products.FindAsync(dto.ProductId.Value);
                 if (product == null)
-                    throw new Exception("ÇáãäÊÌ ÛíÑ ãæÌæÏ");
+                    throw new Exception("Ø§Ù„Ù…Ù†ØªØ¬ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯");
             }
             else
             {
-                // ÅäÔÇÁ ãäÊÌ ÌÏíÏ ÅÐÇ áã íõÍÏÏ ProductId
+                // Ø¥Ù†Ø´Ø§Ø¡ Ù…Ù†ØªØ¬ Ø¬Ø¯ÙŠØ¯ Ø¥Ø°Ø§ Ù„Ù… ÙŠÙØ­Ø¯Ø¯ ProductId
                 if (string.IsNullOrWhiteSpace(dto.ProductName))
-                    throw new Exception("íÌÈ ÊÍÏíÏ ãäÊÌ ãæÌæÏ Ãæ ÅÏÎÇá ÇÓã ãäÊÌ ÌÏíÏ");
+                    throw new Exception("ÙŠØ¬Ø¨ ØªØ­Ø¯ÙŠØ¯ Ù…Ù†ØªØ¬ Ù…ÙˆØ¬ÙˆØ¯ Ø£Ùˆ Ø¥Ø¯Ø®Ø§Ù„ Ø§Ø³Ù… Ù…Ù†ØªØ¬ Ø¬Ø¯ÙŠØ¯");
 
                 product = new Product
                 {
                     Name = dto.ProductName.Trim(),
                     ModelNumber = dto.ModelNumber?.Trim(),
                     CostPrice = dto.CostPerUnit,
-                    SellPrice = dto.CostPerUnit * 1.3m, // åÇãÔ ÇÝÊÑÇÖí 30%
+                    SellPrice = dto.CostPerUnit * 1.3m,
                     Quantity = 0,
                     IsActive = true,
                     CreatedAt = DateTime.Now
@@ -98,10 +98,10 @@ namespace ISPSystem.Services
                 Notes = dto.Notes
             };
 
-            // ÊÍÏíË ßãíÉ ÇáãÎÒæä
+            // Ø²ÙŠØ§Ø¯Ø© ÙƒÙ…ÙŠØ© Ø§Ù„Ù…Ø®Ø²ÙˆÙ†
             product.Quantity += dto.Quantity;
 
-            // ÊÍÏíË ÓÚÑ ÇáÔÑÇÁ Ýí ÇáãäÊÌ (ãä ÂÎÑ ÔÑÇÁ)
+            // ØªØ­Ø¯ÙŠØ« Ø³Ø¹Ø± Ø§Ù„ØªÙƒÙ„ÙØ© Ø¥Ø°Ø§ Ø·ÙÙ„Ø¨
             if (dto.UpdateProductCostPrice)
             {
                 product.CostPrice = dto.CostPerUnit;
@@ -113,6 +113,27 @@ namespace ISPSystem.Services
             await _context.SaveChangesAsync();
 
             return purchase;
+        }
+
+        public async Task<bool> Delete(int id)
+        {
+            var purchase = await _context.Purchases
+                .Include(p => p.Product)
+                .FirstOrDefaultAsync(p => p.Id == id);
+
+            if (purchase == null)
+                return false;
+
+            // Ø®ØµÙ… Ø§Ù„ÙƒÙ…ÙŠØ© Ù…Ù† Ø§Ù„Ù…Ø®Ø²ÙˆÙ† (Ø¥Ø°Ø§ ÙƒØ§Ù† Ø§Ù„Ù…Ù†ØªØ¬ Ù…ÙˆØ¬ÙˆØ¯Ø§Ù‹)
+            if (purchase.Product != null)
+            {
+                purchase.Product.Quantity = Math.Max(0, purchase.Product.Quantity - purchase.Quantity);
+                purchase.Product.UpdatedAt = DateTime.Now;
+            }
+
+            _context.Purchases.Remove(purchase);
+            await _context.SaveChangesAsync();
+            return true;
         }
     }
 }

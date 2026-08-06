@@ -56,8 +56,8 @@ namespace ISPSystem.Services
                 .ToListAsync();
         }
 
-        // تمديد اشتراك
-        public async Task<Subscription> Renew(int clientId)
+        // تمديد اشتراك (مع إمكانية تغيير الباقة/السرعة)
+        public async Task<Subscription> Renew(int clientId, int? newPlanId = null)
         {
             var sub = await _context.Subscriptions
                 .Include(x => x.Plan)
@@ -68,7 +68,22 @@ namespace ISPSystem.Services
             if (sub == null)
                 throw new Exception("Subscription not found");
 
-            var duration = sub.Plan.DurationDays;
+            // تغيير الباقة إن طُلب
+            if (newPlanId.HasValue && newPlanId.Value > 0 && newPlanId.Value != sub.PlanId)
+            {
+                var newPlan = await _context.Plans.FindAsync(newPlanId.Value);
+                if (newPlan == null)
+                    throw new Exception("الباقة الجديدة غير موجودة");
+
+                sub.PlanId = newPlan.Id;
+                sub.Plan = newPlan;
+            }
+
+            // إعادة تحميل الخطة بعد التغيير
+            if (sub.Plan == null)
+                await _context.Entry(sub).Reference(s => s.Plan).LoadAsync();
+
+            var duration = sub.Plan?.DurationDays ?? 30;
 
             sub.EndDate = sub.EndDate > DateTime.Now
                 ? sub.EndDate.AddDays(duration)
@@ -79,6 +94,9 @@ namespace ISPSystem.Services
             sub.RenewedAt = DateTime.Now;
 
             await _context.SaveChangesAsync();
+
+            // تأكد من تحميل الخطة للرد
+            await _context.Entry(sub).Reference(s => s.Plan).LoadAsync();
 
             return sub;
         }

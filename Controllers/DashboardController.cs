@@ -18,11 +18,13 @@ namespace ISPSystem.Controllers
     {
         private readonly AppDbContext _context;
         private readonly MikroTikService _mikroTik;
+        private readonly RadiusService _radius;
 
-        public DashboardController(AppDbContext context, MikroTikService mikroTik)
+        public DashboardController(AppDbContext context, MikroTikService mikroTik, RadiusService radius)
         {
             _context = context;
             _mikroTik = mikroTik;
+            _radius = radius;
         }
 
         [HttpGet]
@@ -34,17 +36,31 @@ namespace ISPSystem.Controllers
                 var today = now.Date;
                 var threeDaysFromNow = today.AddDays(3);
 
-                // 1. MikroTik (محمي)
+                // 1. عدد المتصلين: دمج MikroTik + radacct
                 var onlineClients = 0;
+                var onlineNames = new System.Collections.Generic.HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
                 try
                 {
                     var online = await _mikroTik.GetActiveUsers();
-                    onlineClients = online?.Count ?? 0;
+                    if (online != null)
+                    {
+                        foreach (var u in online)
+                            if (!string.IsNullOrEmpty(u.Name))
+                                onlineNames.Add(u.Name);
+                    }
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"MikroTik Connection Error: {ex.Message}");
                 }
+                try
+                {
+                    var radOnline = await _radius.GetOnlineUsers();
+                    foreach (var k in radOnline.Keys)
+                        onlineNames.Add(k);
+                }
+                catch { }
+                onlineClients = onlineNames.Count;
 
                 // 2. إحصائيات العملاء
                 var totalClients = await _context.Clients.CountAsync();
@@ -56,7 +72,7 @@ namespace ISPSystem.Controllers
                     .CountAsync();
 
                 var expiringToday = await _context.Subscriptions
-                    .CountAsync(s => s.IsActive && s.EndDate.Date == today);
+                    .CountAsync(s => s.IsActive && s.EndDate >= today && s.EndDate < today.AddDays(1));
 
                 var expiringSoon = await _context.Subscriptions
                     .CountAsync(s => s.IsActive && s.EndDate > now && s.EndDate <= threeDaysFromNow);
@@ -76,7 +92,7 @@ namespace ISPSystem.Controllers
 
                 // 4. المالية
                 var todayRevenue = await _context.Payments
-                    .Where(p => p.Status == "Completed" && p.Date.Date == today)
+                    .Where(p => p.Status == "Completed" && p.Date >= today && p.Date < today.AddDays(1))
                     .SumAsync(p => (decimal?)p.Amount) ?? 0;
 
                 var monthRevenue = await _context.Payments
@@ -115,22 +131,32 @@ namespace ISPSystem.Controllers
                     })
                     .ToListAsync();
 
-                var expiringList = await _context.Subscriptions
+                var expiringRaw = await _context.Subscriptions
                     .Include(s => s.Client)
                     .Include(s => s.Plan)
                     .Where(s => s.IsActive && s.EndDate > now && s.EndDate <= threeDaysFromNow)
                     .OrderBy(s => s.EndDate)
                     .Take(5)
-                    .Select(s => new ExpiringClientDto
+                    .Select(s => new
                     {
                         FullName = s.Client != null ? s.Client.FullName : "",
                         Username = s.Client != null ? s.Client.Username : "",
                         Phone = s.Client != null ? s.Client.Phone : "",
                         PlanName = s.Plan != null ? s.Plan.Name : "",
-                        EndDate = s.EndDate,
-                        DaysRemaining = (s.EndDate - now).Days
+                        EndDate = s.EndDate
                     })
                     .ToListAsync();
+
+                // حساب الأيام المتبقية في الذاكرة (EF لا يترجم DateTime - DateTime بشكل موثوق)
+                var expiringList = expiringRaw.Select(s => new ExpiringClientDto
+                {
+                    FullName = s.FullName,
+                    Username = s.Username,
+                    Phone = s.Phone,
+                    PlanName = s.PlanName,
+                    EndDate = s.EndDate,
+                    DaysRemaining = (int)Math.Ceiling((s.EndDate - now).TotalDays)
+                }).ToList();
 
                 return Ok(ApiResponse<object>.Ok(new
                 {
@@ -191,7 +217,7 @@ namespace ISPSystem.Controllers
             }));
         }
 
-        // 🔔 جلب تنبيهات لوحة القيادة الفورية (الاشتراكات الفواتير، النواقص)
+        // 🔔 جلب تنبيهات لوحة القيادة الفورية (الاشتراكات، الفواتير، النواقص)
         [HttpGet("notifications")]
         public async Task<IActionResult> GetNotifications()
         {
@@ -199,7 +225,7 @@ namespace ISPSystem.Controllers
             var threeDaysFromNow = now.AddDays(3);
 
             var expiringSoon = await _context.Subscriptions
-                .CountAsync(s => s.IsActive && s.EndDate <= threeDaysFromNow);
+                .CountAsync(s => s.IsActive && s.EndDate <= threeDaysFromNow && s.EndDate > now);
 
             var overdueInvoices = await _context.Invoices
                 .CountAsync(i => !i.IsPaid && i.DueDate < now);
@@ -208,15 +234,46 @@ namespace ISPSystem.Controllers
                 .CountAsync(p => p.Quantity <= 5);
 
             var notifications = new List<object>();
+            var timeStr = now.ToString("HH:mm");
 
             if (expiringSoon > 0)
-                notifications.Add(new { type = "warning", message = $"{expiringSoon} اشتراك سينتهي خلال 3 أيام", count = expiringSoon });
+            {
+                notifications.Add(new
+                {
+                    id = "expiring-" + now.ToString("yyyyMMdd"),
+                    title = "اشتراكات تنتهي قريباً",
+                    message = $"{expiringSoon} اشتراك سينتهي خلال 3 أيام",
+                    type = "warning",
+                    time = timeStr,
+                    count = expiringSoon
+                });
+            }
 
             if (overdueInvoices > 0)
-                notifications.Add(new { type = "danger", message = $"{overdueInvoices} فاتورة متأخرة", count = overdueInvoices });
+            {
+                notifications.Add(new
+                {
+                    id = "overdue-" + now.ToString("yyyyMMdd"),
+                    title = "فواتير متأخرة",
+                    message = $"{overdueInvoices} فاتورة متأخرة الدفع",
+                    type = "danger",
+                    time = timeStr,
+                    count = overdueInvoices
+                });
+            }
 
             if (lowStockProducts > 0)
-                notifications.Add(new { type = "info", message = $"{lowStockProducts} منتج منخفض المخزون", count = lowStockProducts });
+            {
+                notifications.Add(new
+                {
+                    id = "lowstock-" + now.ToString("yyyyMMdd"),
+                    title = "مخزون منخفض",
+                    message = $"{lowStockProducts} منتج وصل إلى الحد الأدنى للمخزون",
+                    type = "info",
+                    time = timeStr,
+                    count = lowStockProducts
+                });
+            }
 
             return Ok(ApiResponse<object>.Ok(notifications));
         }

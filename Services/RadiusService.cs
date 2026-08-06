@@ -238,7 +238,8 @@ namespace ISPSystem.Services
             return result;
         }
 
-        // ========== فصل الجلسة (CoA / Disconnect) عبر حذف من radacct + Reject ==========
+        // ========== فصل الجلسة (إغلاق محاسبي + Reject) ==========
+        // ملاحظة: فصل الجلسة الفعلية على المايكروتيك يتم عبر MikroTikService.KickActiveUser
         public async Task<bool> DisconnectUser(string username)
         {
             try
@@ -246,14 +247,12 @@ namespace ISPSystem.Services
                 await using var conn = new MySqlConnection(_connectionString);
                 await conn.OpenAsync();
 
-                // إغلاق الجلسات المفتوحة في المحاسبة
                 await Exec(conn,
                     @"UPDATE radacct SET acctstoptime = NOW(), 
               acctterminatecause = 'Admin-Reset'
               WHERE username = @u AND acctstoptime IS NULL",
                     ("@u", username));
 
-                // رفض أي مصادقة جديدة
                 await DisableUser(username);
                 return true;
             }
@@ -262,6 +261,141 @@ namespace ISPSystem.Services
                 _logger.LogError(ex, "DisconnectUser failed: {User}", username);
                 return false;
             }
+        }
+
+        // ========== جلب كلمة المرور الصريحة من radcheck (للعرض للأدمن فقط) ==========
+        
+        public async Task<object> GetUserUsage(string username)
+        {
+            long sessionIn = 0, sessionOut = 0, totalIn = 0, totalOut = 0;
+            DateTime? sessionStart = null;
+            string framedIp = null, mac = null;
+            try
+            {
+                await using var conn = new MySqlConnection(_connectionString);
+                await conn.OpenAsync();
+
+                await using (var cmd = new MySqlCommand(
+                    @"SELECT IFNULL(SUM(acctinputoctets),0), IFNULL(SUM(acctoutputoctets),0)
+                      FROM radacct WHERE username=@u AND acctstoptime IS NULL", conn))
+                {
+                    cmd.Parameters.AddWithValue("@u", username);
+                    await using var r = await cmd.ExecuteReaderAsync();
+                    if (await r.ReadAsync())
+                    {
+                        sessionIn = r.GetInt64(0);
+                        sessionOut = r.GetInt64(1);
+                    }
+                }
+
+                await using (var cmd = new MySqlCommand(
+                    @"SELECT IFNULL(SUM(acctinputoctets),0), IFNULL(SUM(acctoutputoctets),0)
+                      FROM radacct WHERE username=@u", conn))
+                {
+                    cmd.Parameters.AddWithValue("@u", username);
+                    await using var r = await cmd.ExecuteReaderAsync();
+                    if (await r.ReadAsync())
+                    {
+                        totalIn = r.GetInt64(0);
+                        totalOut = r.GetInt64(1);
+                    }
+                }
+
+                await using (var cmd = new MySqlCommand(
+                    @"SELECT framedipaddress, callingstationid, acctstarttime
+                      FROM radacct WHERE username=@u AND acctstoptime IS NULL
+                      ORDER BY acctstarttime DESC LIMIT 1", conn))
+                {
+                    cmd.Parameters.AddWithValue("@u", username);
+                    await using var r = await cmd.ExecuteReaderAsync();
+                    if (await r.ReadAsync())
+                    {
+                        framedIp = r.IsDBNull(0) ? null : r.GetString(0);
+                        mac = r.IsDBNull(1) ? null : r.GetString(1);
+                        sessionStart = r.IsDBNull(2) ? null : r.GetDateTime(2);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetUserUsage failed: {User}", username);
+            }
+
+            long sessionTotal = sessionIn + sessionOut;
+            long grandTotal = totalIn + totalOut;
+
+            return new
+            {
+                username,
+                sessionInputBytes = sessionIn,
+                sessionOutputBytes = sessionOut,
+                sessionTotalBytes = sessionTotal,
+                totalInputBytes = totalIn,
+                totalOutputBytes = totalOut,
+                totalBytes = grandTotal,
+                sessionStart,
+                framedIp,
+                mac,
+                sessionTotalHuman = FormatBytes(sessionTotal),
+                totalHuman = FormatBytes(grandTotal)
+            };
+        }
+
+        public async Task<string> GetRateLimit(string username)
+        {
+            try
+            {
+                await using var conn = new MySqlConnection(_connectionString);
+                await conn.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "SELECT value FROM radreply WHERE username=@u AND attribute='Mikrotik-Rate-Limit' LIMIT 1",
+                    conn);
+                cmd.Parameters.AddWithValue("@u", username);
+                var o = await cmd.ExecuteScalarAsync();
+                return o == null ? null : o.ToString();
+            }
+            catch { return null; }
+        }
+
+        private static string FormatBytes(long bytes)
+        {
+            string[] u = { "B", "KB", "MB", "GB", "TB" };
+            double v = bytes;
+            int i = 0;
+            while (v >= 1024 && i < u.Length - 1) { v /= 1024; i++; }
+            return string.Format("{0:0.##} {1}", v, u[i]);
+        }
+
+public async Task<string> GetCleartextPassword(string username)
+        {
+            try
+            {
+                await using var conn = new MySqlConnection(_connectionString);
+                await conn.OpenAsync();
+
+                await using var cmd = new MySqlCommand(
+                    @"SELECT value FROM radcheck 
+                      WHERE username = @u AND attribute = 'Cleartext-Password'
+                      LIMIT 1",
+                    conn);
+                cmd.Parameters.AddWithValue("@u", username);
+
+                var result = await cmd.ExecuteScalarAsync();
+                return result?.ToString();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetCleartextPassword failed: {User}", username);
+                return null;
+            }
+        }
+
+        // ========== تحديث السرعة + الإرجاع ==========
+        public async Task<(bool Ok, string Rate)> UpdateSpeedWithRate(string username, string speed)
+        {
+            var rate = NormalizeSpeed(speed);
+            var ok = await UpdateSpeed(username, speed);
+            return (ok, rate);
         }
     }
 }

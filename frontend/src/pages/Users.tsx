@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -9,29 +9,26 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  TablePagination,
-  TextField,
   Button,
-  Chip,
   IconButton,
-  InputAdornment,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
+  TextField,
+  Grid,
+  Alert,
+  Chip,
+  CircularProgress,
+  MenuItem,
   FormControl,
   InputLabel,
   Select,
-  MenuItem,
-  Grid,
-  Alert,
-  CircularProgress,
-  Switch,
-  FormControlLabel,
+  TablePagination,
+  Tooltip,
 } from '@mui/material';
 import {
   Add as AddIcon,
-  Search as SearchIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
   Refresh as RefreshIcon,
@@ -51,11 +48,11 @@ interface User {
   lastLogin: string;
 }
 
-const rolePermissions = {
-  Admin: ['all'],
-  Accountant: ['financial', 'reports', 'invoices'],
-  Employee: ['clients', 'subscriptions'],
-  Support: ['clients', 'tickets'],
+const rolePermissions: Record<string, string[]> = {
+  Admin: ['كل الصلاحيات'],
+  Accountant: ['المالية', 'التقارير', 'الفواتير', 'المشتريات'],
+  Employee: ['العملاء', 'الاشتراكات', 'المبيعات'],
+  Support: ['العملاء', 'تذاكر الدعم'],
 };
 
 export default function Users() {
@@ -70,7 +67,7 @@ export default function Users() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  
+
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -78,6 +75,7 @@ export default function Users() {
     phone: '',
     email: '',
     role: 'Employee',
+    status: 'Active',
   });
 
   useEffect(() => {
@@ -86,16 +84,23 @@ export default function Users() {
 
   const fetchUsers = async () => {
     setLoading(true);
+    setError('');
     try {
       const response = await api.get('/users', {
-        params: { page: page + 1, pageSize: rowsPerPage, search },
+        params: { page: page + 1, pageSize: rowsPerPage, search: search || undefined },
       });
-      if (response.data.success) {
-        setUsers(response.data.data.data);
-        setTotal(response.data.data.total);
+
+      if (response.data?.success) {
+        const payload = response.data.data;
+        setUsers(payload?.data ?? []);
+        setTotal(payload?.total ?? 0);
+      } else {
+        setUsers([]);
       }
-    } catch (error) {
-      console.error('Error fetching users:', error);
+    } catch (err: any) {
+      console.error('Error fetching users:', err);
+      setError(err.response?.data?.message || 'فشل جلب المستخدمين (تأكد أنك Admin)');
+      setUsers([]);
     } finally {
       setLoading(false);
     }
@@ -107,10 +112,11 @@ export default function Users() {
       setFormData({
         username: user.username,
         password: '',
-        fullName: user.fullName,
-        phone: user.phone,
+        fullName: user.fullName || '',
+        phone: user.phone || '',
         email: user.email || '',
-        role: user.role,
+        role: user.role || 'Employee',
+        status: user.status || 'Active',
       });
     } else {
       setEditingUser(null);
@@ -121,51 +127,100 @@ export default function Users() {
         phone: '',
         email: '',
         role: 'Employee',
+        status: 'Active',
       });
     }
+    setError('');
     setDialogOpen(true);
   };
 
+  /** يحول أخطاء ValidationProblemDetails إلى نص مقروء */
+  const extractErrorMessage = (err: any): string => {
+    const data = err.response?.data;
+    if (!data) return err.message || 'حدث خطأ';
+
+    // ValidationProblemDetails من ASP.NET
+    if (data.errors && typeof data.errors === 'object') {
+      const messages: string[] = [];
+      for (const key of Object.keys(data.errors)) {
+        const arr = data.errors[key];
+        if (Array.isArray(arr)) messages.push(...arr);
+        else messages.push(String(arr));
+      }
+      if (messages.length) return messages.join(' — ');
+    }
+
+    return data.message || data.title || 'حدث خطأ أثناء الحفظ';
+  };
+
   const handleSubmit = async () => {
+    if (!formData.fullName.trim()) {
+      setError('الاسم الكامل مطلوب');
+      return;
+    }
+    if (!editingUser && (!formData.username.trim() || !formData.password)) {
+      setError('اسم المستخدم وكلمة المرور مطلوبان');
+      return;
+    }
+    if (!editingUser && formData.password.length < 4) {
+      setError('كلمة المرور يجب أن تكون 4 أحرف على الأقل');
+      return;
+    }
+
     setSubmitting(true);
     setError('');
     try {
       if (editingUser) {
-        await api.put(`/users/${editingUser.id}`, {
-          fullName: formData.fullName,
-          phone: formData.phone,
-          email: formData.email,
+        const payload: any = {
+          fullName: formData.fullName.trim(),
+          phone: formData.phone.trim() || null,
+          email: formData.email.trim() || null,
           role: formData.role,
-        });
+          status: formData.status,
+        };
+        if (formData.password.trim()) {
+          payload.password = formData.password;
+        }
+
+        await api.put(`/users/${editingUser.id}`, payload);
         setSuccess('تم تحديث المستخدم بنجاح');
       } else {
-        await api.post('/users', formData);
+        // مهم: أرسل null بدل "" حتى لا يفشل [Phone]/[EmailAddress]
+        await api.post('/users', {
+          username: formData.username.trim(),
+          password: formData.password,
+          fullName: formData.fullName.trim(),
+          phone: formData.phone.trim() || null,
+          email: formData.email.trim() || null,
+          role: formData.role,
+          status: formData.status || 'Active',
+        });
         setSuccess('تم إضافة المستخدم بنجاح');
       }
       setTimeout(() => setSuccess(''), 3000);
       setDialogOpen(false);
       fetchUsers();
     } catch (err: any) {
-      setError(err.response?.data?.message || 'حدث خطأ');
+      setError(extractErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleDelete = async (id: number) => {
-    if (window.confirm('هل أنت متأكد من حذف هذا المستخدم؟')) {
-      try {
-        await api.delete(`/users/${id}`);
-        setSuccess('تم حذف المستخدم بنجاح');
-        fetchUsers();
-      } catch (error) {
-        setError('حدث خطأ أثناء الحذف');
-      }
+    if (!window.confirm('هل أنت متأكد من حذف هذا المستخدم؟')) return;
+    try {
+      await api.delete(`/users/${id}`);
+      setSuccess('تم حذف المستخدم بنجاح');
+      setTimeout(() => setSuccess(''), 3000);
+      fetchUsers();
+    } catch (err: any) {
+      setError(extractErrorMessage(err));
     }
   };
 
   const getRoleColor = (role: string) => {
-    switch(role) {
+    switch (role) {
       case 'Admin': return 'error';
       case 'Accountant': return 'warning';
       case 'Employee': return 'info';
@@ -175,7 +230,7 @@ export default function Users() {
   };
 
   const getRoleName = (role: string) => {
-    switch(role) {
+    switch (role) {
       case 'Admin': return 'مدير';
       case 'Accountant': return 'محاسب';
       case 'Employee': return 'موظف';
@@ -187,98 +242,188 @@ export default function Users() {
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">المستخدمين والصلاحيات</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpenDialog()}>
-          مستخدم جديد
-        </Button>
+        <Typography variant="h4" fontWeight={700}>
+          المستخدمين والصلاحيات
+        </Typography>
+        <Box display="flex" gap={1}>
+          <IconButton onClick={fetchUsers} disabled={loading}>
+            <RefreshIcon />
+          </IconButton>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpenDialog()}>
+            مستخدم جديد
+          </Button>
+        </Box>
       </Box>
 
-      {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {success && (
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>
+          {success}
+        </Alert>
+      )}
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+          {error}
+        </Alert>
+      )}
 
-      <Paper sx={{ p: 2, mb: 2 }}>
+      <Paper sx={{ p: 2, mb: 2, borderRadius: 3 }}>
         <TextField
           fullWidth
-          variant="outlined"
-          placeholder="بحث باسم المستخدم، الاسم الكامل..."
+          size="small"
+          placeholder="بحث بالاسم أو اسم المستخدم..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(0);
+          }}
         />
       </Paper>
 
-      <TableContainer component={Paper}>
+      <TableContainer component={Paper} sx={{ borderRadius: 3 }}>
         <Table>
-          <TableHead sx={{ bgcolor: '#f5f5f5' }}>
+          <TableHead>
             <TableRow>
-              <TableCell>#</TableCell>
               <TableCell>اسم المستخدم</TableCell>
               <TableCell>الاسم الكامل</TableCell>
-              <TableCell>رقم الهاتف</TableCell>
+              <TableCell>الهاتف</TableCell>
               <TableCell>الصلاحية</TableCell>
               <TableCell>الحالة</TableCell>
-              <TableCell>آخر تسجيل دخول</TableCell>
-              <TableCell>الإجراءات</TableCell>
+              <TableCell>آخر دخول</TableCell>
+              <TableCell align="center">إجراءات</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {users.map((user, idx) => (
-              <TableRow key={user.id} hover>
-                <TableCell>{idx + 1 + page * rowsPerPage}</TableCell>
-                <TableCell>{user.username}</TableCell>
-                <TableCell>{user.fullName}</TableCell>
-                <TableCell>{user.phone}</TableCell>
-                <TableCell>
-                  <Chip label={getRoleName(user.role)} color={getRoleColor(user.role) as any} size="small" />
-                </TableCell>
-                <TableCell>
-                  <Chip label={user.status === 'Active' ? 'نشط' : 'غير نشط'} color={user.status === 'Active' ? 'success' : 'default'} size="small" />
-                </TableCell>
-                <TableCell>{user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : '-'}</TableCell>
-                <TableCell>
-                  <IconButton size="small" onClick={() => handleOpenDialog(user)}><EditIcon fontSize="small" /></IconButton>
-                  <IconButton size="small" color="error" onClick={() => handleDelete(user.id)}><DeleteIcon fontSize="small" /></IconButton>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
+                  <CircularProgress />
                 </TableCell>
               </TableRow>
-            ))}
+            ) : users.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
+                  لا يوجد مستخدمين
+                </TableCell>
+              </TableRow>
+            ) : (
+              users.map((user) => (
+                <TableRow key={user.id} hover>
+                  <TableCell>
+                    <Typography fontWeight={600}>{user.username}</Typography>
+                  </TableCell>
+                  <TableCell>{user.fullName}</TableCell>
+                  <TableCell>{user.phone || '—'}</TableCell>
+                  <TableCell>
+                    <Tooltip title={(rolePermissions[user.role] || []).join(' • ')}>
+                      <Chip
+                        icon={<SecurityIcon />}
+                        label={getRoleName(user.role)}
+                        color={getRoleColor(user.role) as any}
+                        size="small"
+                      />
+                    </Tooltip>
+                  </TableCell>
+                  <TableCell>
+                    <Chip
+                      label={user.status === 'Active' ? 'نشط' : user.status || '—'}
+                      color={user.status === 'Active' ? 'success' : 'default'}
+                      size="small"
+                      variant="outlined"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    {user.lastLogin
+                      ? new Date(user.lastLogin).toLocaleString('ar-EG')
+                      : 'لم يسجل دخول'}
+                  </TableCell>
+                  <TableCell align="center">
+                    <IconButton size="small" color="primary" onClick={() => handleOpenDialog(user)}>
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton size="small" color="error" onClick={() => handleDelete(user.id)}>
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
         <TablePagination
-          rowsPerPageOptions={[5, 10, 25]}
           component="div"
           count={total}
-          rowsPerPage={rowsPerPage}
           page={page}
           onPageChange={(_, newPage) => setPage(newPage)}
-          onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(e) => {
+            setRowsPerPage(parseInt(e.target.value, 10));
+            setPage(0);
+          }}
+          labelRowsPerPage="عدد الصفوف"
         />
       </TableContainer>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingUser ? 'تعديل مستخدم' : 'إضافة مستخدم جديد'}</DialogTitle>
         <DialogContent>
-          <Grid container spacing={2} sx={{ mt: 1 }}>
+          <Grid container spacing={2} sx={{ mt: 0.5 }}>
             <Grid item xs={12}>
-              <TextField fullWidth label="اسم المستخدم" value={formData.username} onChange={(e) => setFormData({ ...formData, username: e.target.value })} disabled={!!editingUser} required />
-            </Grid>
-            {!editingUser && (
-              <Grid item xs={12}>
-                <TextField fullWidth label="كلمة المرور" type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} required />
-              </Grid>
-            )}
-            <Grid item xs={12}>
-              <TextField fullWidth label="الاسم الكامل" value={formData.fullName} onChange={(e) => setFormData({ ...formData, fullName: e.target.value })} required />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField fullWidth label="رقم الهاتف" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
+              <TextField
+                fullWidth
+                label="اسم المستخدم"
+                value={formData.username}
+                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                disabled={!!editingUser}
+                required
+              />
             </Grid>
             <Grid item xs={12}>
-              <TextField fullWidth label="البريد الإلكتروني" type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
+              <TextField
+                fullWidth
+                label={editingUser ? 'كلمة المرور الجديدة (اختياري)' : 'كلمة المرور'}
+                type="password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                required={!editingUser}
+                helperText={editingUser ? 'اتركها فارغة إذا لم ترد تغييرها' : '4 أحرف على الأقل'}
+              />
             </Grid>
             <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="الاسم الكامل"
+                value={formData.fullName}
+                onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                required
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="رقم الهاتف"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                placeholder="اختياري"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="البريد الإلكتروني"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="اختياري"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
               <FormControl fullWidth>
                 <InputLabel>الصلاحية</InputLabel>
-                <Select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })} label="الصلاحية">
+                <Select
+                  value={formData.role}
+                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                  label="الصلاحية"
+                >
                   <MenuItem value="Admin">مدير (كل الصلاحيات)</MenuItem>
                   <MenuItem value="Accountant">محاسب (مالية، تقارير، فواتير)</MenuItem>
                   <MenuItem value="Employee">موظف (عملاء، اشتراكات)</MenuItem>
@@ -286,12 +431,33 @@ export default function Users() {
                 </Select>
               </FormControl>
             </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>الحالة</InputLabel>
+                <Select
+                  value={formData.status}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                  label="الحالة"
+                >
+                  <MenuItem value="Active">نشط</MenuItem>
+                  <MenuItem value="Inactive">معطل</MenuItem>
+                  <MenuItem value="Suspended">موقوف</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            {formData.role && (
+              <Grid item xs={12}>
+                <Alert severity="info" icon={<SecurityIcon />}>
+                  الصلاحيات: {(rolePermissions[formData.role] || []).join(' • ')}
+                </Alert>
+              </Grid>
+            )}
           </Grid>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setDialogOpen(false)}>إلغاء</Button>
           <Button onClick={handleSubmit} variant="contained" disabled={submitting}>
-            {submitting ? <CircularProgress size={24} /> : (editingUser ? 'تحديث' : 'إضافة')}
+            {submitting ? <CircularProgress size={24} /> : editingUser ? 'تحديث' : 'إضافة'}
           </Button>
         </DialogActions>
       </Dialog>

@@ -1,48 +1,19 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
-  Grid,
-  Card,
-  CardContent,
-  Typography,
   Box,
+  Typography,
   CircularProgress,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
-  Chip,
   Alert,
-  LinearProgress,
-  useTheme,
-    alpha,
-    Divider,
+  Chip,
 } from '@mui/material';
 import {
   People as PeopleIcon,
   Wifi as WifiIcon,
   AttachMoney as MoneyIcon,
   Receipt as ReceiptIcon,
-  TrendingUp as TrendingUpIcon,
-  TrendingDown as TrendingDownIcon,
+  Refresh as RefreshIcon,
+  Person as PersonIcon,
 } from '@mui/icons-material';
-import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts';
 import api from '../services/api';
 
 interface DashboardData {
@@ -54,308 +25,253 @@ interface DashboardData {
     expiringSoon: number;
     expired: number;
   };
-  plans: Array<{ name: string; count: number }>;
-  financial: {
+  financial?: {
     todayRevenue: number;
     monthRevenue: number;
     monthExpenses: number;
     monthProfit: number;
-    overdueInvoices: number;
-    overdueAmount: number;
-  };
-  recent: {
-    expiredClientsList: any[];
-    expiringSoonList: any[];
+    overdueInvoices?: number;
+    overdueAmount?: number;
   };
 }
 
-const COLORS = ['#6366f1', '#ec4899', '#10b981', '#f59e0b', '#3b82f6', '#8b5cf6'];
+type PillProps = {
+  label: string;
+  value: string | number;
+  icon: React.ReactNode;
+  iconBg: string;
+  iconColor: string;
+};
+
+function StatPill({ label, value, icon, iconBg, iconColor }: PillProps) {
+  return (
+    <Box
+      sx={{
+        flex: '1 1 180px',
+        minWidth: 160,
+        maxWidth: 280,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 2,
+        px: 2.5,
+        py: 2,
+        borderRadius: 999,
+        bgcolor: '#fff',
+        boxShadow: '0 2px 12px rgba(15, 23, 42, 0.06)',
+        border: '1px solid rgba(15, 23, 42, 0.04)',
+      }}
+    >
+      <Box>
+        <Typography
+          variant="caption"
+          sx={{ color: 'text.secondary', fontWeight: 600, display: 1 }}
+        >
+          {label}
+        </Typography>
+        <Typography variant="h5" fontWeight={800} sx={{ color: '#0f172a', lineHeight: 1.2 }}>
+          {value}
+        </Typography>
+      </Box>
+      <Box
+        sx={{
+          width: 48,
+          height: 48,
+          borderRadius: '50%',
+          bgcolor: iconBg,
+          color: iconColor,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        {icon}
+      </Box>
+    </Box>
+  );
+}
 
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [monthlyData, setMonthlyData] = useState<any[]>([]);
-  const theme = useTheme();
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
-  useEffect(() => {
-    fetchDashboard();
-    fetchMonthlyData();
-  }, []);
-
-  const fetchDashboard = async () => {
-    setLoading(true);
+  const fetchDashboard = async (silent = false) => {
+    if (!silent) setLoading(true);
     setError('');
     try {
       const response = await api.get('/dashboard');
-      console.log('Dashboard response:', response.data);
-      
-      if (response.data && response.data.success !== false) {
-        setData(response.data.data || response.data);
-      } else if (response.data && response.data.data) {
-        setData(response.data.data);
+      const body = response.data;
+      const payload = body?.data ?? body?.Data ?? body;
+
+      if (payload?.clients) {
+        setData(payload as DashboardData);
       } else {
-        // بيانات تجريبية إذا لم تكن هناك بيانات حقيقية
         setData({
-          clients: { total: 11, active: 1, online: 0, expiringToday: 0, expiringSoon: 0, expired: 0 },
-          plans: [{ name: '4Mb/s', count: 4 }, { name: '2Mb/s', count: 2 }],
-          financial: { todayRevenue: 0, monthRevenue: 75000, monthExpenses: 0, monthProfit: 75000, overdueInvoices: 0, overdueAmount: 0 },
-          recent: { expiredClientsList: [], expiringSoonList: [] },
+          clients: {
+            total: Number(payload?.totalClients ?? payload?.total ?? 0),
+            active: Number(payload?.activeClients ?? payload?.active ?? 0),
+            online: Number(payload?.onlineClients ?? payload?.online ?? 0),
+            expiringToday: Number(payload?.expiringToday ?? 0),
+            expiringSoon: Number(payload?.expiringSoon ?? 0),
+            expired: Number(payload?.expired ?? payload?.expiredClients ?? 0),
+          },
+          financial: payload?.financial ?? {
+            todayRevenue: 0,
+            monthRevenue: Number(payload?.monthRevenue ?? 0),
+            monthExpenses: 0,
+            monthProfit: 0,
+            overdueInvoices: Number(payload?.overdueInvoices ?? 0),
+          },
         });
       }
+      setLastUpdate(new Date());
     } catch (err: any) {
-      console.error('Error fetching dashboard:', err);
-      setError(err.message || 'حدث خطأ في تحميل البيانات');
-      // بيانات تجريبية
-      setData({
-        clients: { total: 11, active: 1, online: 0, expiringToday: 0, expiringSoon: 0, expired: 0 },
-        plans: [{ name: '4Mb/s', count: 4 }, { name: '2Mb/s', count: 2 }],
-        financial: { todayRevenue: 0, monthRevenue: 75000, monthExpenses: 0, monthProfit: 75000, overdueInvoices: 0, overdueAmount: 0 },
-        recent: { expiredClientsList: [], expiringSoonList: [] },
-      });
+      console.error('Dashboard error:', err);
+      setError(err.response?.data?.message || err.message || 'فشل تحميل لوحة التحكم');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
-  const fetchMonthlyData = async () => {
-    try {
-      const response = await api.get('/financial/dashboard');
-      if (response.data && response.data.success && response.data.data?.monthlyRevenue) {
-        setMonthlyData(response.data.data.monthlyRevenue);
-      } else {
-        setMonthlyData([
-          { month: 'يناير', revenue: 45000, expenses: 32000, profit: 13000 },
-          { month: 'فبراير', revenue: 52000, expenses: 35000, profit: 17000 },
-          { month: 'مارس', revenue: 58000, expenses: 33000, profit: 25000 },
-          { month: 'أبريل', revenue: 75000, expenses: 38000, profit: 37000 },
-        ]);
-      }
-    } catch (err) {
-      setMonthlyData([
-        { month: 'يناير', revenue: 45000, expenses: 32000, profit: 13000 },
-        { month: 'فبراير', revenue: 52000, expenses: 35000, profit: 17000 },
-        { month: 'مارس', revenue: 58000, expenses: 33000, profit: 25000 },
-        { month: 'أبريل', revenue: 75000, expenses: 38000, profit: 37000 },
-      ]);
-    }
-  };
+  useEffect(() => {
+    fetchDashboard();
+    const interval = setInterval(() => fetchDashboard(true), 15000);
+    return () => clearInterval(interval);
+  }, []);
 
-  if (loading) {
+  if (loading && !data) {
     return (
-      <Box sx={{ width: '100%', mt: 4 }}>
-        <LinearProgress />
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight={240}>
+        <CircularProgress />
       </Box>
     );
   }
 
-  const statCards = [
-    {
-      title: 'إجمالي العملاء',
-      value: data?.clients.total || 0,
-      icon: <PeopleIcon sx={{ fontSize: 40 }} />,
-      color: '#6366f1',
-      bgColor: alpha('#6366f1', 0.1),
-    },
-    {
-      title: 'عملاء نشطين',
-      value: data?.clients.active || 0,
-      icon: <WifiIcon sx={{ fontSize: 40 }} />,
-      color: '#10b981',
-      bgColor: alpha('#10b981', 0.1),
-    },
-    {
-      title: 'إيرادات الشهر',
-      value: `${(data?.financial.monthRevenue || 0).toLocaleString()} ل.س`,
-      icon: <MoneyIcon sx={{ fontSize: 40 }} />,
-      color: '#f59e0b',
-      bgColor: alpha('#f59e0b', 0.1),
-    },
-    {
-      title: 'فواتير متأخرة',
-      value: data?.financial.overdueInvoices || 0,
-      icon: <ReceiptIcon sx={{ fontSize: 40 }} />,
-      color: '#ef4444',
-      bgColor: alpha('#ef4444', 0.1),
-    },
-  ];
+  const c = data?.clients ?? {
+    total: 0,
+    active: 0,
+    online: 0,
+    expiringToday: 0,
+    expiringSoon: 0,
+    expired: 0,
+  };
 
-  const planDistribution = data?.plans?.map(plan => ({
-    name: plan.name,
-    value: plan.count,
-  })) || [];
+  const monthRevenue = data?.financial?.monthRevenue ?? 0;
+  const overdueInvoices = data?.financial?.overdueInvoices ?? 0;
 
   return (
-    <Box className="animate-fade-in">
-      <Typography variant="h4" gutterBottom sx={{ fontWeight: 700, mb: 4 }}>
-        لوحة التحكم
-      </Typography>
+    <Box sx={{ direction: 'rtl' }}>
+      <Box
+        display="flex"
+        justifyContent="space-between"
+        alignItems="center"
+        mb={3}
+        flexWrap="wrap"
+        gap={1}
+      >
+        <Box>
+          <Typography variant="h5" fontWeight={800}>
+            لوحة التحكم
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            نظرة سريعة على العملاء والاتصالات والإيرادات
+          </Typography>
+        </Box>
+        <Box display="flex" alignItems="center" gap={1}>
+          <Chip
+            icon={<RefreshIcon />}
+            label="تحديث كل 15 ثانية"
+            size="small"
+            variant="outlined"
+            onClick={() => fetchDashboard()}
+            sx={{ borderRadius: 999, cursor: 'pointer' }}
+          />
+          {lastUpdate && (
+            <Typography variant="caption" color="text.secondary">
+              {lastUpdate.toLocaleTimeString('ar-SY')}
+            </Typography>
+          )}
+        </Box>
+      </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
           {error}
         </Alert>
       )}
 
-      <Grid container spacing={3}>
-        {statCards.map((card, index) => (
-          <Grid item xs={12} sm={6} md={3} key={index}>
-            <Card sx={{ 
-              borderRadius: 4,
-              transition: 'all 0.3s ease',
-              '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 }
-            }}>
-              <CardContent>
-                <Box display="flex" justifyContent="space-between" alignItems="center">
-                  <Box>
-                    <Typography color="textSecondary" gutterBottom variant="body2">
-                      {card.title}
-                    </Typography>
-                    <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                      {card.value}
-                    </Typography>
-                  </Box>
-                  <Box sx={{ 
-                    bgcolor: card.bgColor, 
-                    borderRadius: '50%', 
-                    p: 1.5,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    {card.icon}
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
+      {/* الصف الرئيسي — بنفس أسلوب الصورة + بطاقة المتصلين */}
+      <Box
+        display="flex"
+        flexWrap="wrap"
+        gap={2}
+        justifyContent="stretch"
+        mb={3}
+      >
+        <StatPill
+          label="إجمالي العملاء"
+          value={c.total}
+          icon={<PeopleIcon />}
+          iconBg="#eef2ff"
+          iconColor="#4338ca"
+        />
+        <StatPill
+          label="عملاء نشطين"
+          value={c.active}
+          icon={<PersonIcon />}
+          iconBg="#ecfdf5"
+          iconColor="#059669"
+        />
+        <StatPill
+          label="العملاء المتصلين"
+          value={c.online}
+          icon={<WifiIcon />}
+          iconBg="#ecfeff"
+          iconColor="#0891b2"
+        />
+        <StatPill
+          label="إيرادات الشهر"
+          value={`${Number(monthRevenue).toLocaleString('ar-SY')} ل.س`}
+          icon={<MoneyIcon />}
+          iconBg="#fffbeb"
+          iconColor="#d97706"
+        />
+        <StatPill
+          label="فواتير متأخرة"
+          value={overdueInvoices}
+          icon={<ReceiptIcon />}
+          iconBg="#fff1f2"
+          iconColor="#e11d48"
+        />
+      </Box>
 
-      {/* الرسوم البيانية */}
-      <Grid container spacing={3} sx={{ mt: 2 }}>
-        <Grid item xs={12} md={7}>
-          <Card sx={{ borderRadius: 4 }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                الإيرادات والمصروفات الشهرية
-              </Typography>
-              <ResponsiveContainer width="100%" height={350}>
-                <BarChart data={monthlyData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} />
-                  <XAxis dataKey="month" stroke={theme.palette.text.secondary} />
-                  <YAxis stroke={theme.palette.text.secondary} />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: theme.palette.background.paper,
-                      borderColor: theme.palette.divider,
-                      borderRadius: 12,
-                    }}
-                  />
-                  <Legend />
-                  <Bar dataKey="revenue" fill="#6366f1" name="الإيرادات" radius={[8, 8, 0, 0]} />
-                  <Bar dataKey="expenses" fill="#ef4444" name="المصروفات" radius={[8, 8, 0, 0]} />
-                  <Bar dataKey="profit" fill="#10b981" name="الأرباح" radius={[8, 8, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} md={5}>
-          <Card sx={{ borderRadius: 4 }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                توزيع الباقات
-              </Typography>
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={planDistribution}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                    outerRadius={100}
-                    fill="#8884d8"
-                    dataKey="value"
-                    nameKey="name"
-                  >
-                    {planDistribution.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {/* الملخص المالي */}
-      <Grid container spacing={3} sx={{ mt: 2 }}>
-        <Grid item xs={12} md={6}>
-          <Card sx={{ borderRadius: 4 }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                الملخص المالي
-              </Typography>
-              <Box display="flex" justifyContent="space-between" mb={2}>
-                <Typography color="textSecondary">إيرادات الشهر:</Typography>
-                <Typography fontWeight="bold" color="success.main">
-                  {(data?.financial.monthRevenue || 0).toLocaleString()} ل.س
-                </Typography>
-              </Box>
-              <Box display="flex" justifyContent="space-between" mb={2}>
-                <Typography color="textSecondary">مصروفات الشهر:</Typography>
-                <Typography fontWeight="bold" color="error.main">
-                  {(data?.financial.monthExpenses || 0).toLocaleString()} ل.س
-                </Typography>
-              </Box>
-              <Box display="flex" justifyContent="space-between" mb={2}>
-                <Typography color="textSecondary">أرباح الشهر:</Typography>
-                <Typography fontWeight="bold" color="success.main">
-                  {(data?.financial.monthProfit || 0).toLocaleString()} ل.س
-                </Typography>
-              </Box>
-              <Divider sx={{ my: 2 }} />
-              <Box display="flex" justifyContent="space-between">
-                <Typography color="textSecondary">فواتير متأخرة:</Typography>
-                <Chip label={`${data?.financial.overdueInvoices || 0} فاتورة`} color="error" size="small" />
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} md={6}>
-          <Card sx={{ borderRadius: 4 }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                إحصائيات العملاء
-              </Typography>
-              <Box display="flex" justifyContent="space-between" mb={2}>
-                <Typography color="textSecondary">إجمالي العملاء:</Typography>
-                <Typography fontWeight="bold">{data?.clients.total || 0}</Typography>
-              </Box>
-              <Box display="flex" justifyContent="space-between" mb={2}>
-                <Typography color="textSecondary">عملاء نشطين:</Typography>
-                <Typography fontWeight="bold" color="success.main">{data?.clients.active || 0}</Typography>
-              </Box>
-              <Box display="flex" justifyContent="space-between" mb={2}>
-                <Typography color="textSecondary">عملاء متصلين:</Typography>
-                <Typography fontWeight="bold" color="info.main">{data?.clients.online || 0}</Typography>
-              </Box>
-              <Divider sx={{ my: 2 }} />
-              <Box display="flex" justifyContent="space-between">
-                <Typography color="textSecondary">اشتراكات منتهية:</Typography>
-                <Chip label={data?.clients.expired || 0} color="warning" size="small" />
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+      {/* صف ثانٍ اختياري — انتهاء الاشتراكات */}
+      <Box display="flex" flexWrap="wrap" gap={2}>
+        <StatPill
+          label="ينتهي اليوم"
+          value={c.expiringToday}
+          icon={<ReceiptIcon />}
+          iconBg="#fff7ed"
+          iconColor="#ea580c"
+        />
+        <StatPill
+          label="ينتهي خلال 3 أيام"
+          value={c.expiringSoon}
+          icon={<WifiIcon />}
+          iconBg="#eff6ff"
+          iconColor="#2563eb"
+        />
+        <StatPill
+          label="منتهي الاشتراك"
+          value={c.expired}
+          icon={<PeopleIcon />}
+          iconBg="#fef2f2"
+          iconColor="#dc2626"
+        />
+      </Box>
     </Box>
   );
 }

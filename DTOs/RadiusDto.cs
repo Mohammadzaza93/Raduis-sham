@@ -13,6 +13,6 @@ namespace ISPSystem.DTOs
     {
         public string Host { get; set; } = "192.168.1.121";
         public int Port { get; set; } = 1812;
-        public string Secret { get; set; } = "testing123";
+        public string Secret { get; set; } = "Sham@mm@r!1993#Riad#1991";
     }
 }

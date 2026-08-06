@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace ISPSystem.Models
@@ -18,15 +18,40 @@ namespace ISPSystem.Models
         public string Status { get; set; } = "Active";
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public DateTime? LastLogin { get; set; }
-        public int? CreatedBy { get; set; } // معرف الموظف الذي أضافه
+        public int? CreatedBy { get; set; }
 
-        // Relationships
+        public string FirstName { get; set; }
+        public string LastName { get; set; }
+        public string DisplayName { get; set; }
+        public string Title { get; set; }
+        public string FatherName { get; set; }
+        public string MotherName { get; set; }
+        public string Gender { get; set; }
+        public DateTime? BirthDate { get; set; }
+        public string BirthPlace { get; set; }
+        public string City { get; set; }
+        public string Area { get; set; }
+        public string Street { get; set; }
+        public string Apartment { get; set; }
+        public string ContractNumber { get; set; }
+        public string Notes { get; set; }
+        public string PaymentStatus { get; set; } = "Pending";
+        public string SecondaryPhone { get; set; }
+
+        public string IdFrontImage { get; set; }
+        public string IdBackImage { get; set; }
+        public string ContractFrontImage { get; set; }
+        public string ContractBackImage { get; set; }
+
+        public bool HasFreeSubscription { get; set; } = false;
+        public string FreeSpeed { get; set; }
+
+        public string ClientType { get; set; } = "Regular";
+        public string Role { get; set; } = "Client";
+
         public ICollection<Subscription> Subscriptions { get; set; }
         public ICollection<Payment> Payments { get; set; }
         public ICollection<Invoice> Invoices { get; set; }
-        public string ClientType { get; set; } = "Regular"; // Regular, VIP, Corporate
-                                                            // أو يمكن استخدام Role إذا أردت توحيد الأسماء
-        public string Role { get; set; } = "Client";
         public ICollection<Device> Devices { get; set; }
     }
 }

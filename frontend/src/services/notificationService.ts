@@ -1,7 +1,7 @@
-﻿import api from './api';
+import api from './api';
 
 export interface Notification {
-  id: number;
+  id: string | number;
   title: string;
   message: string;
   time: string;
@@ -23,44 +23,68 @@ class NotificationServiceClass {
     try {
       const response = await api.get('/dashboard/notifications');
       if (response.data && response.data.success) {
-        const newNotifications = (response.data.data || []).map((n: any) => ({
-          id: n.id || Date.now(),
-          title: n.title || 'إشعار جديد',
+        const raw = response.data.data || [];
+        const newNotifications: Notification[] = raw.map((n: any, index: number) => ({
+          id: n.id ?? `notif-${Date.now()}-${index}`,
+          title: n.title || this.getTitleByType(n.type),
           message: n.message || '',
-          time: n.time || 'الآن',
-          read: false,
-          type: n.type || 'info'
+          time: n.time || new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+          read: n.read ?? false,
+          type: (n.type as Notification['type']) || 'info',
         }));
-        this.notifications = [...newNotifications, ...this.notifications].slice(0, 50);
+
+        // دمج مع القديم مع تجنب التكرار حسب الرسالة
+        const existingMessages = new Set(this.notifications.map((x) => x.message));
+        const uniqueNew = newNotifications.filter((n) => !existingMessages.has(n.message));
+        this.notifications = [...uniqueNew, ...this.notifications].slice(0, 50);
         this.saveNotifications();
         this.notifyListeners();
-      } else {
-        // بيانات تجريبية إذا لم يكن هناك API
-        this.addDemoNotifications();
       }
     } catch (error) {
       console.error('Error fetching notifications:', error);
-      this.addDemoNotifications();
+      // لا نضيف demo إلا إذا كانت القائمة فارغة تماماً
+      if (this.notifications.length === 0) {
+        this.addDemoNotifications();
+      }
+    }
+  }
+
+  private getTitleByType(type?: string): string {
+    switch (type) {
+      case 'warning':
+        return 'تنبيه';
+      case 'danger':
+        return 'تحذير هام';
+      case 'success':
+        return 'نجاح';
+      default:
+        return 'إشعار';
     }
   }
 
   private addDemoNotifications() {
-    if (this.notifications.length === 0) {
-      this.notifications = [
-        { id: 1, title: 'مرحباً بك في النظام', message: 'تم تسجيل دخولك بنجاح إلى نظام إدارة ISP', time: 'الآن', read: false, type: 'success' },
-        { id: 2, title: 'اشتراكات ستنتهي قريباً', message: 'يوجد 5 عملاء سينتهي اشتراكهم خلال 3 أيام', time: 'منذ ساعة', read: false, type: 'warning' },
-      ];
-      this.saveNotifications();
-      this.notifyListeners();
-    }
+    this.notifications = [
+      {
+        id: 1,
+        title: 'مرحباً بك في النظام',
+        message: 'تم تسجيل دخولك بنجاح إلى نظام إدارة ISP',
+        time: 'الآن',
+        read: false,
+        type: 'success',
+      },
+    ];
+    this.saveNotifications();
+    this.notifyListeners();
   }
 
   loadNotifications() {
-    const saved = localStorage.getItem('notifications');
-    if (saved) {
-      try {
+    try {
+      const saved = localStorage.getItem('notifications');
+      if (saved) {
         this.notifications = JSON.parse(saved);
-      } catch(e) { console.error(e); }
+      }
+    } catch (e) {
+      console.error(e);
     }
   }
 
@@ -73,11 +97,11 @@ class NotificationServiceClass {
   }
 
   getUnreadCount(): number {
-    return this.notifications.filter(n => !n.read).length;
+    return this.notifications.filter((n) => !n.read).length;
   }
 
-  markAsRead(id: number) {
-    const notification = this.notifications.find(n => n.id === id);
+  markAsRead(id: string | number) {
+    const notification = this.notifications.find((n) => n.id === id);
     if (notification) {
       notification.read = true;
       this.saveNotifications();
@@ -86,26 +110,42 @@ class NotificationServiceClass {
   }
 
   markAllAsRead() {
-    this.notifications.forEach(n => n.read = true);
+    this.notifications.forEach((n) => (n.read = true));
     this.saveNotifications();
     this.notifyListeners();
   }
 
   addNotification(notification: Notification) {
     this.notifications.unshift(notification);
+    this.notifications = this.notifications.slice(0, 50);
     this.saveNotifications();
     this.notifyListeners();
   }
 
+  /** يستقبل إشعار من SignalR */
+  handleRealtimeNotification(raw: any) {
+    const notification: Notification = {
+      id: raw.id || `rt-${Date.now()}`,
+      title: raw.title || this.getTitleByType(raw.type),
+      message: raw.message || '',
+      time: raw.time || new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+      read: false,
+      type: (raw.type as Notification['type']) || 'info',
+    };
+    this.addNotification(notification);
+  }
+
   subscribe(listener: (notifications: Notification[]) => void) {
     this.listeners.push(listener);
+    // أرسل الحالة الحالية فوراً
+    listener(this.notifications);
     return () => {
-      this.listeners = this.listeners.filter(l => l !== listener);
+      this.listeners = this.listeners.filter((l) => l !== listener);
     };
   }
 
   private notifyListeners() {
-    this.listeners.forEach(listener => listener(this.notifications));
+    this.listeners.forEach((listener) => listener([...this.notifications]));
   }
 }
 

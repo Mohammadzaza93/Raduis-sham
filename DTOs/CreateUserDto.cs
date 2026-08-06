@@ -4,24 +4,27 @@ namespace ISPSystem.DTOs
 {
     public class CreateUserDto
     {
-        [Required]
+        [Required(ErrorMessage = "اسم المستخدم مطلوب")]
         [StringLength(50)]
         public string Username { get; set; }
 
-        [Required]
-        [MinLength(4)]
+        [Required(ErrorMessage = "كلمة المرور مطلوبة")]
+        [MinLength(4, ErrorMessage = "كلمة المرور يجب أن تكون 4 أحرف على الأقل")]
         public string Password { get; set; }
 
-        [Required]
+        [Required(ErrorMessage = "الاسم الكامل مطلوب")]
         [StringLength(100)]
         public string FullName { get; set; }
 
-        [Phone]
+        // اختياري — لا تستخدم [Phone] مباشرة لأنها ترفض "" 
+        [StringLength(20)]
         public string Phone { get; set; }
-        [EmailAddress]
+
+        // اختياري — لا تستخدم [EmailAddress] مباشرة لأنها ترفض ""
+        [StringLength(100)]
         public string Email { get; set; }
+
         public string Status { get; set; } = "Active";
         public string Role { get; set; } = "Employee";
-        public int PlanId { get; set; }
     }
 }

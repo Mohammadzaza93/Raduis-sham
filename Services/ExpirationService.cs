@@ -34,6 +34,7 @@ namespace ISPSystem.Services
 
                     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                     var radius = scope.ServiceProvider.GetRequiredService<RadiusService>();
+                    var mikroTik = scope.ServiceProvider.GetService<MikroTikService>();
 
                     // الاشتراكات المنتهية وما زالت Active
                     var expiredSubs = await db.Subscriptions
@@ -54,6 +55,16 @@ namespace ISPSystem.Services
                             {
                                 // تعطيل في RADIUS
                                 var disabled = await radius.DisableUser(sub.Client.Username);
+                                await radius.DisconnectUser(sub.Client.Username);
+
+                                // فصل الجلسة على المايكروتيك فوراً
+                                if (mikroTik != null)
+                                {
+                                    try { await mikroTik.KickActiveUser(sub.Client.Username); }
+                                    catch (Exception kex) {
+                                        _logger.LogWarning(kex, "فشل فصل جلسة MikroTik لـ {User}", sub.Client.Username);
+                                    }
+                                }
 
                                 // تحديث حالة العميل إذا لم يعد لديه اشتراك نشط
                                 var stillHasActive = await db.Subscriptions

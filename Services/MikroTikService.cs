@@ -1,3 +1,4 @@
+#nullable disable
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System;
@@ -603,7 +604,8 @@ namespace ISPSystem.Services
             {
                 var response =
                     await ExecuteCommandAsync(
-                        "/ppp/active/print");
+                        "/ppp/active/print",
+                        "=.proplist=name,address,uptime,caller-id,service,bytes-in,bytes-out");
 
                 var rows =
                     GetDataRows(response);
@@ -613,27 +615,13 @@ namespace ISPSystem.Services
                     users.Add(
                         new ActiveUser
                         {
-                            Name = GetValue(
-                                row,
-                                "name"),
-
-                            Address = GetValue(
-                                row,
-                                "address"),
-
-                            Uptime = GetValue(
-                                row,
-                                "uptime"),
-
-                            BytesIn = ParseLong(
-                                GetValue(
-                                    row,
-                                    "bytes-in")),
-
-                            BytesOut = ParseLong(
-                                GetValue(
-                                    row,
-                                    "bytes-out"))
+                            Name = GetValue(row, "name"),
+                            Address = GetValue(row, "address"),
+                            Uptime = GetValue(row, "uptime"),
+                            CallerId = GetValue(row, "caller-id"),
+                            Service = GetValue(row, "service"),
+                            BytesIn = ParseLong(GetValue(row, "bytes-in")),
+                            BytesOut = ParseLong(GetValue(row, "bytes-out"))
                         });
                 }
 
@@ -650,6 +638,71 @@ namespace ISPSystem.Services
                     "Error while getting active MikroTik users");
 
                 throw;
+            }
+        }
+
+        // =========================================================
+        // 1b. فصل الجلسة النشطة (Kick) — ضروري عند الإيقاف أو تغيير السرعة
+        // =========================================================
+
+        public async Task<bool> KickActiveUser(string username)
+        {
+            if (string.IsNullOrWhiteSpace(username))
+                return false;
+
+            try
+            {
+                var response = await ExecuteCommandAsync(
+                    "/ppp/active/print",
+                    $"?name={username}");
+
+                var rows = GetDataRows(response);
+                bool anyKicked = false;
+
+                foreach (var row in rows)
+                {
+                    if (!row.TryGetValue(".id", out var id) || string.IsNullOrEmpty(id))
+                        continue;
+
+                    var removeResp = await ExecuteCommandAsync(
+                        "/ppp/active/remove",
+                        $"=.id={id}");
+
+                    if (IsDone(removeResp))
+                    {
+                        anyKicked = true;
+                        _logger.LogInformation(
+                            "Kicked active MikroTik session for {Username} (id={Id})",
+                            username, id);
+                    }
+                }
+
+                return anyKicked || rows.Count == 0;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Error kicking active MikroTik user {Username}",
+                    username);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// هل المستخدم متصل حالياً على المايكروتيك؟
+        /// </summary>
+        public async Task<bool> IsUserActive(string username)
+        {
+            try
+            {
+                var users = await GetActiveUsers();
+                return users.Any(u =>
+                    string.Equals(u.Name, username, StringComparison.OrdinalIgnoreCase));
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -1030,16 +1083,177 @@ namespace ISPSystem.Services
                 : string.Empty;
         }
 
-        private static long ParseLong(
-            string value)
+        private static long ParseLong(string value)
         {
-            return long.TryParse(
-                value,
-                out var result)
-                ? result
-                : 0;
+            if (string.IsNullOrWhiteSpace(value))
+                return 0;
+            // MikroTik قد يعيد أرقاماً مع مسافات أو وحدات
+            var cleaned = value.Trim()
+                .Replace(" ", "")
+                .Replace(",", "")
+                .Replace("i", "", StringComparison.OrdinalIgnoreCase);
+            // إن وُجدت لاحقة Ki/Mi
+            double mult = 1;
+            if (cleaned.EndsWith("Ki", StringComparison.OrdinalIgnoreCase))
+            { mult = 1024; cleaned = cleaned[..^2]; }
+            else if (cleaned.EndsWith("Mi", StringComparison.OrdinalIgnoreCase))
+            { mult = 1024 * 1024; cleaned = cleaned[..^2]; }
+            else if (cleaned.EndsWith("Gi", StringComparison.OrdinalIgnoreCase))
+            { mult = 1024.0 * 1024 * 1024; cleaned = cleaned[..^2]; }
+
+            if (long.TryParse(cleaned, System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out var result))
+                return result;
+            if (double.TryParse(cleaned, System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out var d))
+                return (long)(d * mult);
+            return 0;
         }
-    }
+
+        /// <summary>Ping من المايكروتيك إلى IP معيّن</summary>
+        public async Task<object> PingAsync(string address, int count = 4)
+        {
+            if (string.IsNullOrWhiteSpace(address))
+                throw new Exception("عنوان IP مطلوب");
+
+            count = Math.Clamp(count, 1, 10);
+
+            var response = await ExecuteCommandAsync(
+                "/ping",
+                $"=address={address}",
+                $"=count={count}");
+
+            var rows = GetDataRows(response);
+            var replies = new List<object>();
+            int received = 0;
+            double totalMs = 0;
+
+            foreach (var row in rows)
+            {
+                var time = GetValue(row, "time");
+                var status = GetValue(row, "status");
+                var seq = GetValue(row, "seq");
+                var ttl = GetValue(row, "ttl");
+                // time مثل 12ms
+                double ms = 0;
+                if (!string.IsNullOrEmpty(time))
+                {
+                    var t = time.Replace("ms", "").Replace("us", "").Trim();
+                    double.TryParse(t, System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out ms);
+                    if (time.Contains("us")) ms /= 1000.0;
+                    received++;
+                    totalMs += ms;
+                }
+                replies.Add(new { seq, time, status, ttl, ms });
+            }
+
+            var sent = count;
+            var loss = sent > 0 ? Math.Round((1.0 - (double)received / sent) * 100, 1) : 100;
+
+            return new
+            {
+                address,
+                sent,
+                received,
+                packetLossPercent = loss,
+                avgMs = received > 0 ? Math.Round(totalMs / received, 2) : (double?)null,
+                replies
+            };
+        }
+
+        /// <summary>إحصاء ARP تقريبي مرتبط بعنوان العميل (غالباً 1 على PPPoE)</summary>
+        public async Task<int> CountArpNearAsync(string ip)
+        {
+            if (string.IsNullOrWhiteSpace(ip)) return 0;
+            try
+            {
+                var response = await ExecuteCommandAsync("/ip/arp/print");
+                var rows = GetDataRows(response);
+                // نفس الـ IP أو نفس الـ /24
+                var parts = ip.Split('.');
+                string prefix = parts.Length >= 3 ? $"{parts[0]}.{parts[1]}.{parts[2]}." : ip;
+                int n = 0;
+                foreach (var row in rows)
+                {
+                    var addr = GetValue(row, "address") ?? "";
+                    if (addr == ip || addr.StartsWith(prefix))
+                        n++;
+                }
+                return n;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        /// <summary>قراءة سرعة لحظية على واجهة (إن وُجدت)</summary>
+        public async Task<(long rxBps, long txBps, string iface)> TryMonitorTrafficAsync(string username)
+        {
+            // أسماء شائعة لواجهات PPP
+            var candidates = new[]
+            {
+                $"<pppoe-{username}>",
+                $"pppoe-{username}",
+                username
+            };
+            // إن كان username فيه @ خذ الجزء الأول
+            if (username.Contains("@"))
+            {
+                var shortName = username.Split('@')[0];
+                candidates = new[]
+                {
+                    $"<pppoe-{username}>",
+                    $"<pppoe-{shortName}>",
+                    $"pppoe-{shortName}",
+                    shortName,
+                    username
+                };
+            }
+
+            foreach (var iface in candidates)
+            {
+                try
+                {
+                    var response = await ExecuteCommandAsync(
+                        "/interface/monitor-traffic",
+                        $"=interface={iface}",
+                        "=once=");
+                    var rows = GetDataRows(response);
+                    var row = rows.FirstOrDefault();
+                    if (row == null) continue;
+                    var rx = ParseLong(GetValue(row, "rx-bits-per-second"));
+                    var tx = ParseLong(GetValue(row, "tx-bits-per-second"));
+                    if (rx > 0 || tx > 0)
+                        return (rx, tx, iface);
+                }
+                catch
+                {
+                    // جرب الاسم التالي
+                }
+            }
+            return (0, 0, "");
+        }
+
+        public ActiveUser FindActiveUser(List<ActiveUser> list, string username)
+        {
+            if (list == null || string.IsNullOrEmpty(username)) return null;
+            foreach (var u in list)
+            {
+                if (string.IsNullOrEmpty(u.Name)) continue;
+                var a = u.Name; var b = username;
+                var as_ = a.Contains("@") ? a.Split('@')[0] : a;
+                var bs = b.Contains("@") ? b.Split('@')[0] : b;
+                if (string.Equals(a, b, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(as_, bs, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(as_, b, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(a, bs, StringComparison.OrdinalIgnoreCase))
+                    return u;
+            }
+            return null;
+        }
+    } // end MikroTikService
 
     // =========================================================
     // Models
@@ -1048,13 +1262,11 @@ namespace ISPSystem.Services
     public class ActiveUser
     {
         public string Name { get; set; }
-
         public string Address { get; set; }
-
         public string Uptime { get; set; }
-
+        public string CallerId { get; set; }
+        public string Service { get; set; }
         public long BytesIn { get; set; }
-
         public long BytesOut { get; set; }
     }
 

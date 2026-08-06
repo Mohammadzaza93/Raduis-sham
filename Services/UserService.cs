@@ -185,46 +185,137 @@ namespace ISPSystem.Services
         // ========== 🔥 إنشاء عميل مع RADIUS كمسؤول رئيسي فقط ==========
         public async Task<Client> CreateClient(CreateClientDto dto)
         {
-            if (string.IsNullOrEmpty(dto.NationalId))
-                throw new Exception("الرقم الوطني مطلوب");
+            if (string.IsNullOrWhiteSpace(dto.NationalId) || dto.NationalId.Length != 11 || !dto.NationalId.All(char.IsDigit))
+                throw new Exception("الرقم الوطني يجب أن يكون 11 خانة رقمية");
 
-            if (string.IsNullOrEmpty(dto.FullName))
-                throw new Exception("الاسم الكامل مطلوب");
-
-            if (string.IsNullOrEmpty(dto.Phone))
+            if (string.IsNullOrWhiteSpace(dto.Phone))
                 throw new Exception("رقم الهاتف مطلوب");
 
-            if (dto.PlanId <= 0)
-                throw new Exception("يجب اختيار باقة صحيحة");
+            // الاسم: FullName أو FirstName + LastName
+            var hasFull = !string.IsNullOrWhiteSpace(dto.FullName);
+            var hasParts = !string.IsNullOrWhiteSpace(dto.FirstName) || !string.IsNullOrWhiteSpace(dto.LastName);
+            if (!hasFull && !hasParts)
+                throw new Exception("الاسم مطلوب (الاسم الكامل أو الاسم الأول والأخير)");
 
-            var plan = await _context.Plans.FindAsync(dto.PlanId);
-            if (plan == null)
-                throw new Exception("الخطة غير موجودة");
+            // الباقة أو اشتراك مجاني
+            Plan plan = null;
+            int durationDays;
+            decimal price;
+            string speed;
+
+            if (dto.FreeSubscription)
+            {
+                durationDays = dto.FreeDays > 0 ? dto.FreeDays : 30;
+                price = 0;
+                speed = string.IsNullOrWhiteSpace(dto.FreeSpeed) ? "2M/2M" : dto.FreeSpeed;
+                if (dto.PlanId.HasValue && dto.PlanId.Value > 0)
+                    plan = await _context.Plans.FindAsync(dto.PlanId.Value);
+                // باقة مجانية وهمية لتجنب FK PlanId = 0
+                if (plan == null)
+                {
+                    plan = await _context.Plans.FirstOrDefaultAsync(p => p.Name == "اشتراك مجاني");
+                    if (plan == null)
+                    {
+                        plan = new Plan
+                        {
+                            Name = "اشتراك مجاني",
+                            Speed = speed,
+                            Price = 0,
+                            DurationDays = durationDays,
+                            Description = "باقة مجانية تلقائية",
+                            IsActive = true,
+                            SortOrder = 999
+                        };
+                        _context.Plans.Add(plan);
+                        await _context.SaveChangesAsync();
+                    }
+                    else
+                    {
+                        // حدّث السرعة حسب الطلب
+                        plan.Speed = speed;
+                        plan.DurationDays = durationDays;
+                        await _context.SaveChangesAsync();
+                    }
+                }
+            }
+            else
+            {
+                if (!dto.PlanId.HasValue || dto.PlanId.Value <= 0)
+                    throw new Exception("يجب اختيار باقة صحيحة");
+                plan = await _context.Plans.FindAsync(dto.PlanId.Value);
+                if (plan == null)
+                    throw new Exception("الخطة غير موجودة");
+                durationDays = plan.DurationDays;
+                price = plan.Price;
+                speed = plan.Speed ?? "1M/1M";
+            }
 
             var existingCount = await _context.Clients
                 .Where(c => c.NationalId == dto.NationalId)
                 .CountAsync();
 
             var sequence = existingCount + 1;
-            var username = $"{dto.NationalId}-{sequence}@sham.net";
-            var plainPassword = RandomPasswordService.GeneratePassword(5);
+            // معرف العميل / اسم المستخدم: {nationalId}-{seq}@sham.net أو ما يُرسل
+            var username = !string.IsNullOrWhiteSpace(dto.Username)
+                ? dto.Username.Trim()
+                : $"{dto.NationalId}-{sequence}@sham.net";
+
+            if (await _context.Clients.AnyAsync(c => c.Username == username))
+                throw new Exception("اسم المستخدم موجود مسبقاً");
+
+            var plainPassword = !string.IsNullOrWhiteSpace(dto.Password)
+                ? dto.Password
+                : RandomPasswordService.GeneratePassword(6);
             var hashedPassword = _password.Hash(plainPassword);
 
-            var endDate = DateTime.Now.AddDays(plan.DurationDays);
+            var endDate = DateTime.Now.AddDays(durationDays);
+
+            if (string.IsNullOrWhiteSpace(dto.NationalId) || dto.NationalId.Length != 11 || !dto.NationalId.All(char.IsDigit))
+                throw new Exception("الرقم الوطني يجب أن يكون 11 خانة رقمية");
+
+            if (string.IsNullOrWhiteSpace(dto.IdFrontImage) || string.IsNullOrWhiteSpace(dto.IdBackImage))
+                throw new Exception("صور الهوية (الوجه الأمامي والخلفي) مطلوبة");
+
+            var fullName = !string.IsNullOrWhiteSpace(dto.FullName)
+                ? dto.FullName.Trim()
+                : $"{dto.FirstName} {dto.LastName}".Trim();
 
             var client = new Client
             {
                 Username = username,
                 Password = hashedPassword,
-                FullName = dto.FullName,
+                FullName = fullName,
+                FirstName = dto.FirstName,
+                LastName = dto.LastName,
+                DisplayName = dto.DisplayName ?? fullName,
+                Title = dto.Title,
                 Phone = dto.Phone,
-                Email = username,
+                Email = !string.IsNullOrWhiteSpace(dto.Email) ? dto.Email : username,
                 NationalId = dto.NationalId,
                 Address = dto.Address ?? "",
-                Status = "Active",
+                Status = dto.IsActive ? "Active" : "Suspended",
                 CreatedAt = DateTime.Now,
                 MacAddress = RandomPasswordService.GenerateRandomMacAddress(),
-                IpAddress = RandomPasswordService.GenerateRandomIpAddress()
+                IpAddress = RandomPasswordService.GenerateRandomIpAddress(),
+                FatherName = dto.FatherName,
+                MotherName = dto.MotherName,
+                Gender = dto.Gender,
+                BirthDate = dto.BirthDate,
+                BirthPlace = dto.BirthPlace,
+                City = dto.City,
+                Area = dto.Area,
+                Street = dto.Street,
+                Apartment = dto.Apartment,
+                ContractNumber = dto.ContractNumber,
+                Notes = dto.Notes,
+                SecondaryPhone = dto.SecondaryPhone,
+                PaymentStatus = dto.PaymentStatus ?? "Pending",
+                IdFrontImage = dto.IdFrontImage,
+                IdBackImage = dto.IdBackImage,
+                ContractFrontImage = dto.ContractFrontImage,
+                ContractBackImage = dto.ContractBackImage,
+                HasFreeSubscription = dto.FreeSubscription,
+                FreeSpeed = dto.FreeSubscription ? (dto.FreeSpeed ?? "2M/2M") : null
             };
 
             using var transaction = await _context.Database.BeginTransactionAsync();
@@ -239,12 +330,12 @@ namespace ISPSystem.Services
                 var subscription = new Subscription
                 {
                     ClientId = client.Id,
-                    PlanId = plan.Id,
+                    PlanId = plan!.Id,
                     StartDate = DateTime.Now,
                     EndDate = endDate,
                     IsActive = true,
                     Status = "Active",
-                    PaidAmount = plan.Price
+                    PaidAmount = price
                 };
                 _context.Subscriptions.Add(subscription);
                 await _context.SaveChangesAsync();
@@ -255,10 +346,10 @@ namespace ISPSystem.Services
                     InvoiceNumber = GenerateInvoiceNumber(),
                     ClientId = client.Id,
                     SubscriptionId = subscription.Id,
-                    SubTotal = plan.Price,
+                    SubTotal = price,
                     Tax = 0,
                     Discount = 0,
-                    Total = plan.Price,
+                    Total = price,
                     Date = DateTime.Now,
                     DueDate = DateTime.Now.AddDays(7),
                     IsPaid = true,
@@ -274,7 +365,7 @@ namespace ISPSystem.Services
                     ClientId = client.Id,
                     SubscriptionId = subscription.Id,
                     InvoiceId = invoice.Id,
-                    Amount = plan.Price,
+                    Amount = price,
                     Date = DateTime.Now,
                     PaymentMethod = dto.PaymentMethod ?? "Cash",
                     Status = "Completed"
@@ -289,10 +380,10 @@ namespace ISPSystem.Services
                 // ========== RADIUS ==========
                 try
                 {
-                    string radiusSpeed = plan.Speed?
+                    string radiusSpeed = (speed ?? "1M/1M")
                         .Replace("Mb/s", "M")
                         .Replace("Mbps", "M")
-                        .Trim() ?? "1M/1M";
+                        .Trim();
 
                     if (!radiusSpeed.Contains("/"))
                         radiusSpeed = $"{radiusSpeed}/{radiusSpeed}";
@@ -315,10 +406,10 @@ namespace ISPSystem.Services
                  // ========== 🟢 RADIUS فقط (المسؤول الرئيسي عن الاتصال والسرعة) ==========
                 try
                 {
-                    string radiusSpeed = plan.Speed?
+                    string radiusSpeed = (speed ?? "1M/1M")
                         .Replace("Mb/s", "M")
                         .Replace("Mbps", "M")
-                        .Trim() ?? "1M/1M";
+                        .Trim();
 
                     if (!radiusSpeed.Contains("/"))
                         radiusSpeed = $"{radiusSpeed}/{radiusSpeed}";
